@@ -1,0 +1,88 @@
+✅ 1. Create Conda Environment from a .yaml File
+
+Assuming you have a file like environment.yaml in your project folder:
+🔧 Command:
+        conda env create -f environment.yaml
+        This will:
+            Create a new environment (with the name defined inside the .yaml file)
+            Install all dependencies listed
+
+🧠 Note:
+        If the environment name is rag_env, it will create that.
+        You can rename it while creating like this:
+            conda env create -f environment.yaml -n my_custom_env
+
+
+✅ 2. Activate the Environment
+
+Once created:
+        conda activate rag_env
+
+If you renamed it, use:
+        conda activate my_custom_env
+
+
+✅ 3. Clone the Git Project (e.g., from GitLab)
+
+From your terminal or JupyterLab terminal:
+        git clone https://gitlab.com/your-username/your-project-name.git
+        cd your-project-name
+
+Then, assuming environment.yaml is inside that project folder:
+        conda env create -f environment.yaml
+        conda activate rag_env
+
+
+📁 Typical Folder Structure
+
+ARAG/
+│
+├── data/                               # Data directory
+│   ├── external/                       # External datasets
+│   ├── processed/                      # Processed datasets
+│   └── raw/                            # Raw datasets
+│
+├── modules/                             # Core Python modules for project components
+│   ├── context_integration.py          # Integrating context into the pipeline
+│   ├── document_collection.py          # Document collection logic
+│   ├── document_embedding.py           # Document embedding logic
+│   ├── generation.py                   # Generation phase for responses (Gemini, etc.)
+│   ├── rag_pipeline.py                 # Main RAG pipeline
+│   ├── retrieval_system.py             # Retrieval system for document search
+│
+├── notebooks/                          # Jupyter Notebooks for exploration and experiments
+│   ├── 1_document_processing.ipynb     # Notebook for document preprocessing
+│   ├── 2_document_embedding.ipynb      # Notebook for document embeddings
+│   ├── 3_retrieval_system.ipynb        # Notebook for document retrieval
+│   ├── 4_context_integration.ipynb     # Notebook for context integration
+│   ├── 5_generation.ipynb              # Notebook for generation phase (Gemini)
+│   ├── 6_rag_pipeline.ipynb            # Notebook for the full RAG pipeline
+│   ├── Testing.ipynb                   # Testing notebook
+│
+├── scripts/                             # Utility scripts
+│   ├── convert_notebooks.py             # Script to convert notebooks
+│   ├── generate_folder_structure.py     # Python script to generate folder structure
+│   ├── folder_structure.txt             # generated folder structure
+│
+├── src/                                # Source code for model and utilities
+│   ├── data_loader.py                  # Data loading logic
+│   ├── generator.py                    # Code for text generation
+│   ├── model.py                        # Model-related code (e.g., for generation)
+│   ├── retriever.py                    # Retriever logic for document search
+│   ├── utils.py                        # Utility functions
+│
+├── .gitignore                          # Git ignore file to avoid committing unnecessary files
+├── deployment.txt                      # Deployment instructions
+├── environment.yaml                    # Conda environment setup for the project
+├── install.txt                         # Installation guide for project setup
+├── pyproject.toml                      # Poetry setup and dependency management
+├── README.md                           # Project overview and setup instructions
+├── requirements.txt                    # Basic dependencies for the project
+
+
+✅ Optional: Update an Existing Env from YAML
+
+If you've already created the env and want to update it:
+        conda env update -f environment.yaml --prune
+
+--prune removes packages not listed in the YAML.

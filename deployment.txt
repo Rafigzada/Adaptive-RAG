@@ -1,0 +1,118 @@
+Here's how Poetry will help you in the future for deploying or installing your package:
+1. Dependency Management
+Poetry will manage your project’s dependencies. You don’t need to manually track which dependencies your project uses—Poetry will handle that for you, and you can install them by simply running:
+
+bash
+Copy
+Edit
+poetry install
+This installs all dependencies listed in pyproject.toml, including any development dependencies (e.g., for testing or documentation). It also creates a poetry.lock file, which locks the specific versions of each package, ensuring consistency across environments.
+
+2. Building Your Project
+When you're ready to deploy or package your project for distribution (e.g., on PyPI or a private repository), Poetry will handle the packaging automatically. You can create the distribution package (e.g., .tar.gz or .whl file) with this simple command:
+
+bash
+Copy
+Edit
+poetry build
+This command generates a distributable version of your package that you can upload to PyPI or share with others.
+
+3. Publishing Your Package
+Once your package is ready, Poetry simplifies the process of uploading to the Python Package Index (PyPI) or other repositories. Assuming you've set up your PyPI credentials (using poetry config), you can publish your package with a single command:
+
+bash
+Copy
+Edit
+poetry publish --build
+This will upload the package to PyPI, making it available for installation by others.
+
+4. Installation of Your Package
+For others (or yourself, on a different machine) to install your package, you can use the following command:
+
+bash
+Copy
+Edit
+poetry add <package-name>
+If you’ve published it on PyPI, this will automatically fetch the correct version and install it. If it's a local package that you haven't uploaded to PyPI, you can use:
+
+bash
+Copy
+Edit
+poetry install <path-to-package>
+5. Environment Management
+Poetry also manages virtual environments for you. When you run poetry install, it will automatically create a virtual environment (if one doesn't exist), so you don't need to worry about setting up virtual environments manually.
+
+To activate the virtual environment managed by Poetry, you can use:
+
+bash
+Copy
+Edit
+poetry shell
+This activates the environment in which your project dependencies are installed.
+
+Will You Need to Manually Edit Code or Files?
+For most cases, no, you won't need to manually edit setup.py or pyproject.toml once you've set them up with Poetry. Poetry will handle:
+
+Adding dependencies to the pyproject.toml.
+
+Creating and locking versions in the poetry.lock file.
+
+Handling virtual environments and installations.
+
+Publishing to PyPI, if necessary.
+
+However, there may be edge cases where you want to modify the pyproject.toml file manually, for example:
+
+Custom Build Scripts: If your project requires custom build steps, you might need to add that configuration manually in pyproject.toml.
+
+Specific Dependency Versions: If you need very specific versions of libraries (e.g., due to compatibility issues), you may need to adjust the version constraints in pyproject.toml.
+
+But in most cases, Poetry will abstract away the complexity of packaging and dependency management, reducing the need for manual changes.
+
+Example Workflow for Deployment
+Here's an example of how you'd use Poetry to manage the project and deploy it:
+
+Initialize the Project (if you haven’t done it already):
+
+bash
+Copy
+Edit
+poetry init
+This will guide you through the process of setting up the pyproject.toml file for your project.
+
+Install Dependencies:
+If you’re working on a project with dependencies:
+
+bash
+Copy
+Edit
+poetry add <dependency-name>
+This will add the dependency to your pyproject.toml.
+
+Build the Package:
+When you're ready to package your project for distribution:
+
+bash
+Copy
+Edit
+poetry build
+Publish the Package (optional, for PyPI):
+
+bash
+Copy
+Edit
+poetry publish --build
+Install Your Package (locally or from PyPI):
+
+If it's on PyPI:
+
+bash
+Copy
+Edit
+poetry add <package-name>
+Or if you have the .whl or .tar.gz file, install locally:
+
+bash
+Copy
+Edit
+poetry add <path-to-package-file>
