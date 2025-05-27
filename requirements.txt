@@ -1,0 +1,7 @@
+numpy
+pandas
+matplotlib
+openai
+scikit-learn
+IPython
+PyPDF2
