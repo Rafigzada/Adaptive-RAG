@@ -21,7 +21,7 @@ def main():
     print("Starting RAG Demo with GPT-4...")
     
     # Configuration
-    OPENAI_API_KEY="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"
+    OPENAI_API_KEY=""
     PDF_DIR = "./pdfs"
     
     if not OPENAI_API_KEY:
