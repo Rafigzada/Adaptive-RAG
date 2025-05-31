@@ -12,16 +12,19 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, current_dir)
 sys.path.insert(0, '.')
 
+from dotenv import load_dotenv
+load_dotenv()
+
 # Import all required modules
 from rag_pipeline import RAGPipeline, rag_pipeline_pdf
 from load_docs import create_pdf_directory, list_pdf_files
 
 def main():
     """Main function to run the RAG demo"""
-    print("Starting RAG Demo with GPT-4...")
+    print("Starting RAG Demo with Gemini...")
     
     # Configuration
-    OPENAI_API_KEY=""
+    OPENAI_API_KEY=os.getenv("OPENAI_API_KEY")
     PDF_DIR = "./pdfs"
     
     if not OPENAI_API_KEY:
@@ -112,13 +115,20 @@ def interactive_mode():
     """Run the pipeline in interactive mode"""
     print("Starting Interactive RAG Mode...")
     
-    OPENAI_API_KEY = input("Enter your OpenAI API key: ").strip()
+    OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+
     if not OPENAI_API_KEY:
         print("No API key provided. Exiting.")
         return
     
-    PDF_DIR = input("Enter PDF directory path (default: ./pdfs): ").strip() or "./pdfs"
+    PDF_DIR = input("\nEnter PDF directory path (default: ./pdfs): ").strip() or "./pdfs"
+
+    # --- Get model name input ---
+    model_input = input("\nEnter Gemini model name (default: gemini-1.5-flash-latest): ").strip()
     
+    # If model_input is blank, pass None so AnswerGenerator uses its own default
+    selected_model = model_input if model_input else None 
+
     # Setup
     create_pdf_directory(PDF_DIR)
     pdf_files = list_pdf_files(PDF_DIR)

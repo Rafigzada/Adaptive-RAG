@@ -69,7 +69,7 @@ class RAGPipeline:
             prompt, prompt_time = create_augmented_prompt(query, processed_docs)
             
             # Step 4: Generate answer using simple prompt
-            answer, generation_time = self.generator.generate_answer_gpt4(prompt)
+            answer, generation_time = self.generator.generate_answer_gemini(prompt)
         
         # Calculate total pipeline time
         total_time = time.time() - pipeline_start
@@ -151,7 +151,7 @@ def rag_pipeline_pdf(query: str, api_key: str, pdf_directory: str = "./pdfs", k:
     prompt, prompt_time = create_augmented_prompt(query, processed_docs)
 
     # Step 7: Generate answer
-    answer, generation_time = generator.generate_answer_gpt4(prompt)
+    answer, generation_time = generator.generate_answer_gemini(prompt)
 
     # Calculate total pipeline time
     total_time = time.time() - pipeline_start

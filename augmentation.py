@@ -24,7 +24,7 @@ Context information:
 {context}
 
 Answer the question based on the context information provided above. Include citation numbers [1], [2], etc. when referencing specific information from the context.
-If the context doesn't contain enough information to fully answer the question, acknowledge this limitation in your response.
+If the context doesn't contain enough information to fully answer the question, acknowledge this limitation.
 Present your answer in a clear and concise manner.
 """
 
@@ -48,7 +48,7 @@ def format_context_with_citations(retrieved_docs: List[Dict]) -> str:
             chunk_info = f" (Chunk {metadata.get('chunk_idx', 0) + 1})"
         
         context_parts.append(f"[{i+1}] From {source}{chunk_info}:\n{doc['content']}")
-    
+        
     return "\n\n".join(context_parts)
 
 
@@ -61,20 +61,16 @@ Provide clear, concise, and well-structured responses."""
 
 
 def create_chat_messages(query: str, context: str, system_prompt: str = None) -> List[Dict[str, str]]:
-    """Create chat messages for the API call"""
+    """
+    Create chat messages for the API call, adapted for Gemini.
+    The system prompt is now prepended to the user message.
+    """
     if system_prompt is None:
         system_prompt = create_system_prompt()
     
-    user_message = f"""Question: {query}
-
-Context information:
-{context}
-
-Answer the question based on the context information provided above. Include citation numbers [1], [2], etc. when referencing specific information from the context.
-If the context doesn't contain enough information to fully answer the question, acknowledge this limitation in your response.
-Present your answer in a clear and concise manner."""
+    # Combine system prompt and user message into a single user turn
+    combined_user_content = f"{system_prompt}\n\nQuestion: {query}\n\nContext information:\n{context}\n\nAnswer the question based on the context information provided above. Include citation numbers [1], [2], etc. when referencing specific information from the context.\nIf the context doesn't contain enough information to fully answer the question, acknowledge this limitation in your response.\nPresent your answer in a clear and concise manner."
 
     return [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": user_message}
+        {"role": "user", "parts": [{"text": combined_user_content}]} # Gemini expects 'parts' with 'text'
     ]

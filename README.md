@@ -12,7 +12,7 @@ This repository includes:
 
 ## Requirements
 
-To run the project locally or on a teammate's machine, you need to set up the environment with all the necessary dependencies.
+To run the project locally, you need to set up the environment with all the necessary dependencies.
 
 ### 1. Install Anaconda Navigator
 
@@ -68,23 +68,38 @@ Once Git is installed:
 3. Run the following command to clone the project:
 
    ```bash
-   git clone https://your-repository-url.git
-   cd ARAG
+   git clone https://git.cs.uni-paderborn.de/ssahoo/advanced-rag.git
+   cd advanced-rag
    ```
 
-### 7. Set Up the Environment from `environment.yaml`
+### 🔐 Step 7: Set Up the `.env` File for API Key Management
 
-You can set up the environment from the `environment.yaml` file or update the newly created environment with it.
+To securely manage your API key (e.g., for Gemini), use a `.env` file in your project directory.
 
-1. In the terminal, while in the project folder (`ARAG`), run the following command to create the environment from the `environment.yaml` file:
+#### ✅ Steps to Create and Use `.env`
+
+1. **Create a `.env` file** in your project root:
 
    ```bash
-   conda env create -f environment.yaml
+   touch .env
+    ```
+
+2. **Add your API key** to the `.env` file (replace with your actual key):
+
+   ```env
+   OPENAI_API_KEY=your_openai_api_key_here
    ```
-2. If you want to **update** the environment instead of creating a new one, use:
+
+3. **Install the required library, if you haven’t already** to load `.env` files:
 
    ```bash
-   conda env update -f environment.yaml --prune
+   pip install python-dotenv
+   ```
+
+4. **Prevent `.env` from being committed to Git** by adding it to `.gitignore`:
+
+   ```bash
+   echo ".env" >> .gitignore
    ```
 
 ### 8. Create a Kernel for the New Environment
@@ -117,46 +132,118 @@ Whenever you need to work in the environment, you can activate it in the termina
 conda activate rag_env
 ```
 
-Once activated, you can install any additional dependencies or run Python scripts inside this environment.
+This ensures that any packages you install or scripts you run will use the correct Python environment.
 
----
 
 ### 10. Install Required Python Packages
 
-After setting up the environment, you need to install the project dependencies. You can install the necessary packages by running:
+Once the environment is activated, install the required Python packages by running:
 
 ```bash
 pip install -r requirements.txt
 ```
 
-Or if you want to install them via Conda, you can use the `environment.yaml` file:
+> ⚠️ **Important:** Make sure you have activated the environment (`rag_env`) before running this command.
+> Installing packages **without activation** may install them globally or in the wrong environment, which can lead to conflicts or import errors.
+
+You can confirm the active environment by running:
 
 ```bash
-conda env update -f environment.yaml
+which python
 ```
 
-### 11. Running JupyterLab
+It should return a path like:
+
+```
+/path/to/anaconda3/envs/rag_env/bin/python
+```
+
+This confirms you're installing into the correct environment.
+
+
+### Step 11: Display Hidden Files like `.env` and `.gitignore` in JupyterLab
+
+By default, hidden files and folders (those starting with a dot, e.g., `.env`, `.gitignore`) are not visible in JupyterLab. You can enable this by following these steps:
+
+---
+
+#### Steps to Enable Viewing Hidden Files in JupyterLab
+
+1. **Check Jupyter configuration paths:**
+
+   Open your terminal and run:
+
+   ```bash
+   jupyter --paths
+    ````
+
+You'll see output like this:
+
+```
+config:
+    /Users/your-username/.jupyter
+    /usr/local/etc/jupyter
+    /etc/jupyter
+data:
+    /Users/your-username/Library/Jupyter
+    /usr/local/share/jupyter
+    /usr/share/jupyter
+runtime:
+    /Users/username/Library/Jupyter/runtime
+    ...
+```
+
+Take note of the `config` path — particularly the one in your home directory (e.g., `/Users/your-username/.jupyter`).
+
+---
+
+2. **Generate a Jupyter server config file** (if it doesn't exist):
+
+   ```bash
+   jupyter server --generate-config
+   ```
+
+   This creates a file called:
+
+   ```bash
+   ~/.jupyter/jupyter_server_config.py
+   ```
+
+---
+
+3. **Edit the config file to allow hidden files:**
+
+   Open `jupyter_server_config.py` in a text editor and find the following line:
+
+   ```python
+   # c.ContentsManager.allow_hidden = False
+   ```
+
+   Uncomment it and change the value to `True`:
+
+   ```python
+   c.ContentsManager.allow_hidden = True
+   ```
+
+   Save and close the file.
+
+---
+
+4. **Restart JupyterLab**, and open the file browser.
+
+5. **Enable hidden file view in JupyterLab UI**:
+
+   * Go to the **menu bar**: `View → Show Hidden Files`
+   * You should now see `.env`, `.gitignore`, and any other hidden files in the file browser
+
+
+### 12. Running JupyterLab
 
 After installing the necessary dependencies, you can start JupyterLab with:
 
 ```bash
 jupyter lab
 ```
-
-### 12. Running the Notebooks
-
-* Open the notebooks in the `notebooks/` directory in JupyterLab.
-* Start with `1_document_processing.ipynb` to preprocess the documents and follow the pipeline through to `6_rag_pipeline.ipynb` for the complete RAG pipeline execution.
-
-## Files in the Project
-
-* `pyproject.toml`: Contains the project's metadata and dependencies managed by Poetry.
-* `environment.yaml`: Conda environment setup for the project.
-* `requirements.txt`: Basic dependencies for the project.
-* `install.txt`: A guide for project installation and setup.
-* `deployment.txt`: Deployment instructions for setting up the project in production environments.
-* `generate_folder_structure.py`: A script to generate the folder structure of your project.
-* `tests/`: Unit tests for the project.
 
 ## Contributing
 

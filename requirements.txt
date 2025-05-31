@@ -5,3 +5,6 @@ openai
 scikit-learn
 IPython
 PyPDF2
+python-dotenv
+google-generativeai
+ipywidgets
