@@ -233,7 +233,7 @@ Take note of the `config` path — particularly the one in your home directory (
 
 ### 12. Running JupyterLab
 
-After installing the necessary dependencies, you can start JupyterLab with:
+After installing the necessary dependencies, you can start JupyterLab:
 
 ```bash
 jupyter lab
