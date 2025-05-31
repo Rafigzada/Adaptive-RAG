@@ -72,11 +72,11 @@ Once Git is installed:
    cd advanced-rag
    ```
 
-### 🔐 Step 7: Set Up the `.env` File for API Key Management
+### Step 7: Set Up the `.env` File for API Key Management
 
 To securely manage your API key (e.g., for Gemini), use a `.env` file in your project directory.
 
-#### ✅ Steps to Create and Use `.env`
+#### Steps to Create and Use `.env`
 
 1. **Create a `.env` file** in your project root:
 
@@ -195,8 +195,6 @@ runtime:
 
 Take note of the `config` path — particularly the one in your home directory (e.g., `/Users/your-username/.jupyter`).
 
----
-
 2. **Generate a Jupyter server config file** (if it doesn't exist):
 
    ```bash
@@ -208,8 +206,6 @@ Take note of the `config` path — particularly the one in your home directory (
    ```bash
    ~/.jupyter/jupyter_server_config.py
    ```
-
----
 
 3. **Edit the config file to allow hidden files:**
 
@@ -226,8 +222,6 @@ Take note of the `config` path — particularly the one in your home directory (
    ```
 
    Save and close the file.
-
----
 
 4. **Restart JupyterLab**, and open the file browser.
 
