@@ -13,8 +13,8 @@ from load_docs import load_pdfs_from_directory, adaptive_chunking, find_relevant
 from retrieval import DocumentRetriever
 from augmentation import create_augmented_prompt, create_chat_messages, format_context_with_citations
 from generation import AnswerGenerator
-from summarization import DocumentSummarizer # NEW IMPORT
-from ranking import DocumentReRanker # NEW IMPORT
+from summarization import DocumentSummarizer
+from ranking import DocumentReRanker
 
 
 class RAGPipeline:
@@ -30,8 +30,8 @@ class RAGPipeline:
         self.is_initialized = False
 
         # Initialize the new summarizer and re-ranker modules
-        self.document_summarizer = DocumentSummarizer(api_key, answer_model_name) # NEW
-        self.document_reranker = DocumentReRanker(api_key, answer_model_name)     # NEW
+        self.document_summarizer = DocumentSummarizer(api_key, answer_model_name)
+        self.document_reranker = DocumentReRanker(api_key, answer_model_name)
 
     def initialize_documents(self, pdf_directory: str = "./pdfs"):
         """Initialize the pipeline by loading, processing, and summarizing documents"""
@@ -70,8 +70,7 @@ class RAGPipeline:
 
         self.is_initialized = True
         print("\n--- RAG Pipeline Initialization Completed! ---")
-
-    # Removed the static re_rank_retrieved_documents method from here
+        
 
     def query(self, query: str, k: int = 3, use_chat_format: bool = True, rerank_top_k: int = 3) -> Dict[str, Any]:
         """Process a single query through the complete RAG pipeline"""
@@ -217,7 +216,7 @@ class RAGPipeline:
         return results
 
 
-# Convenience function for backwards compatibility (updated)
+# Convenience function for backwards compatibility
 def rag_pipeline_pdf(query: str, api_key: str, pdf_directory: str = "./pdfs", k: int = 3, rerank_top_k: int = 3) -> Dict[str, Any]:
     """Complete RAG pipeline with PDF support - standalone function"""
     print(f"\n{'='*70}")

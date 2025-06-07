@@ -10,8 +10,6 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
 
-# --- Existing functions (unchanged) ---
-
 def pdf_directory(pdf_dir: str = "./pdfs") -> str:
     """
     Checks if the PDF directory exists and prints a message if not.
@@ -166,12 +164,11 @@ def adaptive_chunking(documents: List[str],
     return chunked_docs, doc_mapping, chunk_metadata
 
 
-# This function remains here as it uses summaries for initial filtering
 def find_relevant_documents(
     query: str,
-    document_summaries: List[Dict], # summaries are passed in
+    document_summaries: List[Dict],
     summary_vectorizer: TfidfVectorizer,
-    summary_vectors: Any, # This will be a scipy sparse matrix
+    summary_vectors: Any,
     top_n_summaries: int = 5
 ) -> List[Dict]:
     """

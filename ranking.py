@@ -27,14 +27,14 @@ class DocumentReRanker:
         batch_size = 3 # Process documents in batches to manage context window and get scores
         
         for i in range(0, len(retrieved_docs), batch_size):
-            batch_docs = retrieved_docs[i:i + batch_size] # Use the actual document objects
+            batch_docs = retrieved_docs[i:i + batch_size]
             
             print(f"    --- Sending Batch {i//batch_size + 1} to Re-ranker (Documents in this batch) ---")
             batch_candidates_text = []
             for j, doc in enumerate(batch_docs):
                 title = doc.get('metadata', {}).get('title', 'Unknown Title')
                 source = os.path.basename(doc.get('metadata', {}).get('source', 'Unknown Source'))
-                content_preview = doc.get('content', '')[:500] # Limit content for prompt
+                content_preview = doc.get('content', '')[:500]
                 
                 batch_candidates_text.append(f"Document {j+1} (Title: {title}, Source: {source}): {content_preview}...")
                 print(f"    Document {j+1} in batch: '{title}' (Source: {source})")
@@ -55,7 +55,7 @@ class DocumentReRanker:
                     }
                 )
                 rerank_output = response.text.strip()
-                print(f"\n  - LLM Re-ranker Output(Score given by LLM on a scale of 1 to 5) for batch {i//batch_size + 1}:\n{rerank_output}\n") # Debug print
+                print(f"\n  - LLM Re-ranker Output(Score given by LLM on a scale of 1 to 5) for batch {i//batch_size + 1}:\n{rerank_output}\n")
 
                 batch_scores_parsed = []
                 lines = rerank_output.split('\n')
@@ -84,7 +84,7 @@ class DocumentReRanker:
                     
                     # Ensure we don't add duplicates (though with doc groups, this is less common)
                     if not any(d.get('metadata', {}).get('original_doc_idx') == doc_to_add.get('metadata', {}).get('original_doc_idx') and
-                               d.get('metadata', {}).get('chunk_idx') == doc_to_add.get('metadata', {}).get('chunk_idx') # Use chunk_idx for uniqueness within same doc
+                               d.get('metadata', {}).get('chunk_idx') == doc_to_add.get('metadata', {}).get('chunk_idx')
                                for d in reranked_scores):
                         reranked_scores.append(doc_to_add)
 

@@ -23,7 +23,13 @@ class DocumentSummarizer:
             original_source = metadata.get("source", f"document_{doc_idx}")
             original_title = metadata.get("title", f"Document {doc_idx}")
 
-            prompt = f"Summarize the following document , focusing on its main topic and key points. Do not include introductory phrases like 'This document discusses' or 'The text is about'. Just the summary.\n\nDocument Title: {original_title}\n\nDocument Content:\n{doc_text[:8000]}..." # Limit content for prompt
+            prompt = f"Summarize the following document , focusing on its main topic and key points. Do not include introductory phrases like 'This document discusses' or 'The text is about'. Just the summary.\n\nDocument Title: {original_title}\n\nDocument Content:\n{doc_text[:8000]}..."
+
+            if i == 0: # Only print for the first document to avoid excessive output
+                print("\n--- DEBUG: Document Content Sent to LLM (First Document Only) ---")
+                print(f"Document Source: {original_source}")
+                print(f"Content (first 200 chars): {doc_text[:200]}{'...' if len(doc_text) > 200 else ''}")
+                print("---------------------------------------------------------------\n")
             
             try:
                 response = self.summary_model.generate_content(
@@ -35,13 +41,11 @@ class DocumentSummarizer:
                 )
                 summary_text = response.text.strip()
 
-                # --- TEST PRINT: First Document Summary (First 500 chars) ---
                 if i == 0: # Only print for the first document processed
                     print("\n--- TEST OUTPUT: First Document Summary Preview ---")
                     print(f"Document Source: {original_source}")
                     print(f"Summary : {summary_text}")
                     print("---------------------------------------------------\n")
-                # --- END TEST PRINT ---
                 
                 document_summaries.append({
                     "doc_idx": doc_idx,
