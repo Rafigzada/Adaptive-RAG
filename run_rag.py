@@ -17,7 +17,7 @@ load_dotenv()
 
 # Import all required modules
 from rag_pipeline import RAGPipeline, rag_pipeline_pdf
-from load_docs import create_pdf_directory, list_pdf_files
+from load_docs import pdf_directory, list_pdf_files
 
 def main():
     """Main function to run the RAG demo"""
@@ -32,7 +32,7 @@ def main():
         return
     
     # Setup PDF directory
-    create_pdf_directory(PDF_DIR)
+    pdf_directory(PDF_DIR)
     pdf_files = list_pdf_files(PDF_DIR)
     
     if not pdf_files:
@@ -126,11 +126,10 @@ def interactive_mode():
     # --- Get model name input ---
     model_input = input("\nEnter Gemini model name (default: gemini-1.5-flash-latest): ").strip()
     
-    # If model_input is blank, pass None so AnswerGenerator uses its own default
-    selected_model = model_input if model_input else None 
+    selected_answer_model = model_input if model_input else 'gemini-1.5-flash-latest' 
 
     # Setup
-    create_pdf_directory(PDF_DIR)
+    pdf_directory(PDF_DIR)
     pdf_files = list_pdf_files(PDF_DIR)
     
     if not pdf_files:
@@ -139,7 +138,7 @@ def interactive_mode():
     
     # Initialize pipeline
     try:
-        rag = RAGPipeline(api_key=OPENAI_API_KEY)
+        rag = RAGPipeline(api_key=OPENAI_API_KEY, answer_model_name=selected_answer_model)
         rag.initialize_documents(pdf_directory=PDF_DIR)
         print("Pipeline initialized successfully!")
         

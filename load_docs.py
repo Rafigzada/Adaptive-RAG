@@ -2,22 +2,27 @@ import os
 import glob
 import shutil
 import PyPDF2
-from typing import List, Dict, Tuple
+from typing import List, Dict, Tuple, Any # Ensure 'Any' is imported for flexibility
+import google.generativeai as genai
+import time
+import numpy as np
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
 
 
-def create_pdf_directory(pdf_dir: str = "./pdfs") -> str:
-    """Create PDF directory and move any PDFs from root directory"""
-    os.makedirs(pdf_dir, exist_ok=True)
-    print(f"PDF directory created at: {os.path.abspath(pdf_dir)}")
-    
-    # Check for PDFs in current directory that need to be moved
-    pdf_files_in_root = glob.glob("*.pdf")
-    if pdf_files_in_root:
-        print(f"Found {len(pdf_files_in_root)} PDFs in root directory, moving to {pdf_dir}...")
-        for pdf in pdf_files_in_root:
-            destination = os.path.join(pdf_dir, pdf)
-            shutil.move(pdf, destination)
-            print(f"  - Moved {pdf}")
+# --- Existing functions (unchanged) ---
+
+def pdf_directory(pdf_dir: str = "./pdfs") -> str:
+    """
+    Checks if the PDF directory exists and prints a message if not.
+    It does NOT create the directory, expecting the user to provide it.
+    """
+    if not os.path.exists(pdf_dir):
+        print(f"Warning: The specified PDF directory '{os.path.abspath(pdf_dir)}' does not exist.")
+        print("Please create this directory and place your PDF files inside it.")
+        # We won't exit here; let the main script check for actual files and handle exiting.
+    else:
+        print(f"Using PDF directory: {os.path.abspath(pdf_dir)}")
     
     return pdf_dir
 
@@ -95,12 +100,12 @@ def chunk_documents(documents: List[str], chunk_size: int = 100, overlap: int = 
     return chunked_docs, doc_mapping
 
 
-def adaptive_chunking(documents: List[str], 
-                     document_metadata: List[Dict],
-                     default_chunk_size: int = 300,
-                     default_overlap: int = 50,
-                     large_doc_threshold: int = 10000,
-                     very_large_doc_threshold: int = 50000) -> Tuple[List[str], List[int], List[Dict]]:
+def adaptive_chunking(documents: List[str],
+                      document_metadata: List[Dict],
+                      default_chunk_size: int = 500,
+                      default_overlap: int = 50,
+                      large_doc_threshold: int = 10000,
+                      very_large_doc_threshold: int = 50000) -> Tuple[List[str], List[int], List[Dict]]:
     """Apply different chunking strategies based on document size"""
     chunked_docs = []
     doc_mapping = []
@@ -159,3 +164,47 @@ def adaptive_chunking(documents: List[str],
 
     print(f"Created {len(chunked_docs)} chunks from {len(documents)} documents")
     return chunked_docs, doc_mapping, chunk_metadata
+
+
+# This function remains here as it uses summaries for initial filtering
+def find_relevant_documents(
+    query: str,
+    document_summaries: List[Dict], # summaries are passed in
+    summary_vectorizer: TfidfVectorizer,
+    summary_vectors: Any, # This will be a scipy sparse matrix
+    top_n_summaries: int = 5
+) -> List[Dict]:
+    """
+    Finds relevant documents based on TF-IDF similarity to summaries.
+    Returns a list of dictionaries with doc_idx, summary, and similarity score.
+    """
+    if not document_summaries:
+        print("No document summaries available for pre-filtering.")
+        return []
+
+    print("\n--- Pre-filtering Documents (by Summary TF-IDF) ---")
+    query_vector = summary_vectorizer.transform([query])
+    similarity_scores = summary_vectors.dot(query_vector.T).toarray().flatten()
+
+    # Get top_n_summaries indices
+    top_indices = np.argsort(similarity_scores)[::-1][:top_n_summaries]
+
+    relevant_docs_info = []
+    for idx in top_indices:
+        score = similarity_scores[idx]
+        if score > 0: # Only include if there's some similarity
+            relevant_docs_info.append({
+                "doc_idx": document_summaries[idx]["doc_idx"],
+                "summary": document_summaries[idx]["summary"],
+                "original_source": document_summaries[idx]["original_source"],
+                "original_title": document_summaries[idx]["original_title"],
+                "similarity_score": score
+            })
+            print(f"  - Document {document_summaries[idx]['doc_idx']} ('{document_summaries[idx]['original_title']}') - Score: {score:.4f}")
+    
+    if not relevant_docs_info:
+        print("  - No relevant documents found based on summary similarity.")
+    else:
+        print(f"Found {len(relevant_docs_info)} documents relevant based on summaries.")
+
+    return relevant_docs_info

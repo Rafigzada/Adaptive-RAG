@@ -6,7 +6,7 @@ import google.api_core.exceptions
 
 
 class AnswerGenerator:
-    def __init__(self, api_key: str, default_model: str = "gemini-1.5-flash-latest"):
+    def __init__(self, api_key: str, default_model: str):
         """
         Initializes the AnswerGenerator with a Gemini API key and configures the SDK.
         """
