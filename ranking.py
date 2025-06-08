@@ -2,6 +2,10 @@ import google.generativeai as genai
 from typing import List, Dict, Any
 import os
 import time
+import logging
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 class DocumentReRanker:
     """
@@ -10,6 +14,7 @@ class DocumentReRanker:
     def __init__(self, api_key: str, model_name: str):
         genai.configure(api_key=api_key)
         self.reranker_model = genai.GenerativeModel(model_name)
+        logger.info(f"Document Re-ranker model initialized ({model_name}).")
         print(f"Document Re-ranker model initialized ({model_name}).")
 
     def rerank_documents(self, query: str, retrieved_docs: List[Dict], top_k_rerank: int = 3) -> List[Dict]:

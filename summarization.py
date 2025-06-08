@@ -1,6 +1,10 @@
 import google.generativeai as genai
 from typing import List, Dict, Any
 import time
+import logging
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 class DocumentSummarizer:
     """
@@ -9,6 +13,7 @@ class DocumentSummarizer:
     def __init__(self, api_key: str, model_name: str):
         genai.configure(api_key=api_key)
         self.summary_model = genai.GenerativeModel(model_name)
+        logger.info(f"Document Summarizer model initialized ({model_name}).")
         print(f"\nDocument Summarizer model initialized ({model_name}).")
 
     def generate_summaries(self, documents: List[str], document_metadata: List[Dict]) -> List[Dict]:
