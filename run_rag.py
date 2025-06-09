@@ -17,7 +17,7 @@ load_dotenv()
 
 # Import all required modules
 from rag_pipeline import RAGPipeline, rag_pipeline_pdf
-
+from load_docs import pdf_directory, list_pdf_files
 
 def main():
     """Main function to run the RAG demo"""
@@ -30,7 +30,14 @@ def main():
         print("Please set your OpenAI API key in the OPENAI_API_KEY variable")
         return
     
-   
+    # Setup PDF directory
+    pdf_directory(PDF_DIR)
+    pdf_files = list_pdf_files(PDF_DIR)
+    
+    if not pdf_files:
+        print("No PDF files found. Please add some PDFs to the pdfs directory.")
+        return
+
     
     # Sample questions to demonstrate
     test_queries = [
@@ -119,11 +126,10 @@ def interactive_mode():
     # --- Get model name input ---
     model_input = input("\nEnter Gemini model name (default: gemini-1.5-flash-latest): ").strip()
     
-    # If model_input is blank, pass None so AnswerGenerator uses its own default
-    selected_model = model_input if model_input else None 
+    selected_answer_model = model_input if model_input else 'gemini-1.5-flash-latest' 
 
     # Setup
-    create_pdf_directory(PDF_DIR)
+    pdf_directory(PDF_DIR)
     pdf_files = list_pdf_files(PDF_DIR)
     
     if not pdf_files:
@@ -132,7 +138,7 @@ def interactive_mode():
     
     # Initialize pipeline
     try:
-        rag = RAGPipeline(api_key=OPENAI_API_KEY)
+        rag = RAGPipeline(api_key=OPENAI_API_KEY, answer_model_name=selected_answer_model)
         rag.initialize_documents(pdf_directory=PDF_DIR)
         print("Pipeline initialized successfully!")
         
@@ -157,6 +163,7 @@ def interactive_mode():
                 
     except Exception as e:
         print(f"Error initializing pipeline: {e}")
+
 
 
 if __name__ == "__main__":
