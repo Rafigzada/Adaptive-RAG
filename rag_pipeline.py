@@ -6,7 +6,7 @@ from typing import Dict, List, Any
 # Add current directory to Python path to find local modules
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from load_docs import load_pdfs_from_directory, adaptive_chunking
+from load_docs import load_wikipedia_articles, adaptive_chunking
 from retrieval import DocumentRetriever
 from augmentation import create_augmented_prompt, create_chat_messages, format_context_with_citations
 from generation import AnswerGenerator
@@ -19,24 +19,27 @@ class RAGPipeline:
         self.document_metadata = []
         self.is_initialized = False
     
-    def initialize_documents(self, pdf_directory: str = "./pdfs"):
-        """Initialize the pipeline by loading and processing documents"""
-        print(f"Loading documents from {pdf_directory}...")
-        self.documents, self.document_metadata = load_pdfs_from_directory(pdf_directory)
-        
+    def initialize_documents(self):
+        """Initialize the pipeline using Wikipedia articles"""
+        print("🔍 Loading Wikipedia articles...")
+
+        # Load Wikipedia articles
+        self.documents, self.document_metadata = load_wikipedia_articles(limit=50)
+
         if len(self.documents) == 0:
-            raise ValueError(f"No PDF documents found in {pdf_directory}")
-        
+            raise ValueError("No Wikipedia documents found.")
+
         # Chunk the documents
         chunked_docs, doc_mapping, chunk_metadata = adaptive_chunking(
-            self.documents, self.document_metadata, 
-            default_chunk_size=300, default_overlap=50
+            self.documents, self.document_metadata,
+            default_chunk_size=300,
+            default_overlap=50
         )
-        
-        # Create embeddings
+
+        # Embed and index chunks
         self.retriever.create_embeddings(chunked_docs, doc_mapping, chunk_metadata)
         self.is_initialized = True
-        print("Pipeline initialization completed!")
+        print("✅ Wikipedia-based pipeline initialization completed!")
     
     def query(self, query: str, k: int = 3, use_chat_format: bool = True) -> Dict[str, Any]:
         """Process a single query through the complete RAG pipeline"""
