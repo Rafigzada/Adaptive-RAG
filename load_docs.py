@@ -2,8 +2,14 @@ import os
 import glob
 import shutil
 import PyPDF2
-from typing import List, Dict, Tuple
+from typing import List, Dict, Tuple, Any
+import google.generativeai as genai
+import time
+import numpy as np
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
 from datasets import load_dataset
+
 
 def load_wikipedia_articles(limit: int = 50) -> Tuple[List[str], List[Dict]]:
     """
@@ -34,6 +40,71 @@ def load_wikipedia_articles(limit: int = 50) -> Tuple[List[str], List[Dict]]:
     return documents, metadata
 
 
+def pdf_directory(pdf_dir: str = "./pdfs") -> str:
+    """
+    Checks if the PDF directory exists and prints a message if not.
+    It does NOT create the directory, expecting the user to provide it.
+    """
+    if not os.path.exists(pdf_dir):
+        print(f"Warning: The specified PDF directory '{os.path.abspath(pdf_dir)}' does not exist.")
+        print("Please create this directory and place your PDF files inside it.")
+        # We won't exit here; let the main script check for actual files and handle exiting.
+    else:
+        print(f"Using PDF directory: {os.path.abspath(pdf_dir)}")
+    
+    return pdf_dir
+
+
+def list_pdf_files(pdf_dir: str) -> List[str]:
+    """List all PDF files in the specified directory"""
+    pdf_files = glob.glob(os.path.join(pdf_dir, "*.pdf"))
+    if pdf_files:
+        print(f"\nFound {len(pdf_files)} PDF files ready for processing:")
+        for pdf in pdf_files:
+            print(f"  - {os.path.basename(pdf)}")
+    else:
+        print(f"\nNo PDF files found in {pdf_dir}. Please upload some PDFs using the file browser.")
+    return pdf_files
+
+
+def load_pdfs_from_directory(directory_path: str) -> Tuple[List[str], List[Dict]]:
+    """Load PDFs from the specified directory and extract their text content"""
+    documents = []
+    document_metadata = []
+
+    # Find all PDF files in the directory
+    pdf_files = glob.glob(os.path.join(directory_path, "*.pdf"))
+
+    for file_path in pdf_files:
+        try:
+            with open(file_path, 'rb') as file:
+                # Create PDF reader object
+                pdf_reader = PyPDF2.PdfReader(file)
+
+                # Extract text from each page and combine
+                text = ""
+                for page_num in range(len(pdf_reader.pages)):
+                    page = pdf_reader.pages[page_num]
+                    page_text = page.extract_text()
+                    if page_text:  # Check if text extraction was successful
+                        text += page_text + "\n"
+
+                # Store document and its metadata
+                documents.append(text)
+                document_metadata.append({
+                    "source": file_path,
+                    "title": os.path.basename(file_path),
+                    "length": len(text),
+                    "pages": len(pdf_reader.pages)
+                })
+
+                print(f"Loaded PDF: {file_path} ({len(pdf_reader.pages)} pages, {len(text)} characters)")
+        except Exception as e:
+            print(f"Error loading {file_path}: {e}")
+
+    return documents, document_metadata
+
+
 def chunk_documents(documents: List[str], chunk_size: int = 100, overlap: int = 20) -> Tuple[List[str], List[int]]:
     """Split longer documents into smaller chunks with overlap"""
     chunked_docs = []
@@ -57,12 +128,12 @@ def chunk_documents(documents: List[str], chunk_size: int = 100, overlap: int = 
     return chunked_docs, doc_mapping
 
 
-def adaptive_chunking(documents: List[str], 
-                     document_metadata: List[Dict],
-                     default_chunk_size: int = 300,
-                     default_overlap: int = 50,
-                     large_doc_threshold: int = 10000,
-                     very_large_doc_threshold: int = 50000) -> Tuple[List[str], List[int], List[Dict]]:
+def adaptive_chunking(documents: List[str],
+                      document_metadata: List[Dict],
+                      default_chunk_size: int = 500,
+                      default_overlap: int = 50,
+                      large_doc_threshold: int = 10000,
+                      very_large_doc_threshold: int = 50000) -> Tuple[List[str], List[int], List[Dict]]:
     """Apply different chunking strategies based on document size"""
     chunked_docs = []
     doc_mapping = []
@@ -121,3 +192,46 @@ def adaptive_chunking(documents: List[str],
 
     print(f"Created {len(chunked_docs)} chunks from {len(documents)} documents")
     return chunked_docs, doc_mapping, chunk_metadata
+
+
+def find_relevant_documents(
+    query: str,
+    document_summaries: List[Dict],
+    summary_vectorizer: TfidfVectorizer,
+    summary_vectors: Any,
+    top_n_summaries: int = 5
+) -> List[Dict]:
+    """
+    Finds relevant documents based on TF-IDF similarity to summaries.
+    Returns a list of dictionaries with doc_idx, summary, and similarity score.
+    """
+    if not document_summaries:
+        print("No document summaries available for pre-filtering.")
+        return []
+
+    print("\n--- Pre-filtering Documents (by Summary TF-IDF) ---")
+    query_vector = summary_vectorizer.transform([query])
+    similarity_scores = summary_vectors.dot(query_vector.T).toarray().flatten()
+
+    # Get top_n_summaries indices
+    top_indices = np.argsort(similarity_scores)[::-1][:top_n_summaries]
+
+    relevant_docs_info = []
+    for idx in top_indices:
+        score = similarity_scores[idx]
+        if score > 0: # Only include if there's some similarity
+            relevant_docs_info.append({
+                "doc_idx": document_summaries[idx]["doc_idx"],
+                "summary": document_summaries[idx]["summary"],
+                "original_source": document_summaries[idx]["original_source"],
+                "original_title": document_summaries[idx]["original_title"],
+                "similarity_score": score
+            })
+            print(f"  - Document {document_summaries[idx]['doc_idx']} ('{document_summaries[idx]['original_title']}') - Score: {score:.4f}")
+    
+    if not relevant_docs_info:
+        print("  - No relevant documents found based on summary similarity.")
+    else:
+        print(f"Found {len(relevant_docs_info)} documents relevant based on summaries.")
+
+    return relevant_docs_info
