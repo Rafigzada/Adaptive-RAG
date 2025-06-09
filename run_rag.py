@@ -25,7 +25,6 @@ def main():
     
     # Configuration
     OPENAI_API_KEY=os.getenv("OPENAI_API_KEY")
-    PDF_DIR = "./pdfs"
     
     if not OPENAI_API_KEY:
         print("Please set your OpenAI API key in the OPENAI_API_KEY variable")
@@ -38,6 +37,7 @@ def main():
     if not pdf_files:
         print("No PDF files found. Please add some PDFs to the pdfs directory.")
         return
+
     
     # Sample questions to demonstrate
     test_queries = [
@@ -53,7 +53,7 @@ def main():
     try:
         # Initialize pipeline
         rag = RAGPipeline(api_key=OPENAI_API_KEY)
-        rag.initialize_documents(pdf_directory=PDF_DIR)
+        rag.initialize_documents()
         
         # Run queries
         class_results = []
@@ -163,6 +163,7 @@ def interactive_mode():
                 
     except Exception as e:
         print(f"Error initializing pipeline: {e}")
+
 
 
 if __name__ == "__main__":

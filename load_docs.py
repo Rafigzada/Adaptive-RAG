@@ -2,12 +2,42 @@ import os
 import glob
 import shutil
 import PyPDF2
-from typing import List, Dict, Tuple, Any # Ensure 'Any' is imported for flexibility
+from typing import List, Dict, Tuple, Any
 import google.generativeai as genai
 import time
 import numpy as np
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
+from datasets import load_dataset
+
+
+def load_wikipedia_articles(limit: int = 50) -> Tuple[List[str], List[Dict]]:
+    """
+    Loads a sample of Wikipedia articles using HuggingFace Datasets.
+    """
+    print(f"🔍 Loading {limit} Wikipedia articles...")
+    wiki_dataset = load_dataset("wikipedia", "20220301.en", split="train",streaming=True, trust_remote_code=True)
+
+    documents = []
+    metadata = []
+
+    for i, entry in enumerate(wiki_dataset):
+        if i >= limit:
+            break
+
+        text = entry["text"].strip()
+        if not text:
+            continue
+
+        documents.append(text)
+        metadata.append({
+            "title": entry["title"],
+            "length": len(text),
+            "source": "Wikipedia"
+        })
+
+    print(f"✅ Loaded {len(documents)} Wikipedia articles (streamed).")
+    return documents, metadata
 
 
 def pdf_directory(pdf_dir: str = "./pdfs") -> str:

@@ -8,8 +8,7 @@ import google.generativeai as genai
 # Add current directory to Python path to find local modules
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-# Import from updated modules
-from load_docs import load_pdfs_from_directory, adaptive_chunking, find_relevant_documents
+from load_docs import load_wikipedia_articles, load_pdfs_from_directory, adaptive_chunking, find_relevant_documents
 from retrieval import DocumentRetriever
 from augmentation import create_augmented_prompt, create_chat_messages, format_context_with_citations
 from generation import AnswerGenerator
@@ -28,10 +27,33 @@ class RAGPipeline:
         self.summary_vectorizer = None
         self.summary_vectors = None
         self.is_initialized = False
-
-        # Initialize the new summarizer and re-ranker modules
         self.document_summarizer = DocumentSummarizer(api_key, answer_model_name)
         self.document_reranker = DocumentReRanker(api_key, answer_model_name)
+
+
+    def initialize_wikipedia(self):
+        """Initialize the pipeline using Wikipedia articles"""
+        print("🔍 Loading Wikipedia articles...")
+
+        # Load Wikipedia articles
+        self.documents, self.document_metadata = load_wikipedia_articles(limit=50)
+
+        if len(self.documents) == 0:
+            raise ValueError("No Wikipedia documents found.")
+
+        # Chunk the documents
+        chunked_docs, doc_mapping, chunk_metadata = adaptive_chunking(
+            self.documents, self.document_metadata,
+            default_chunk_size=300,
+            default_overlap=50
+        )
+
+        # Embed and index chunks
+        self.retriever.create_embeddings(chunked_docs, doc_mapping, chunk_metadata)
+        self.is_initialized = True
+        print("✅ Wikipedia-based pipeline initialization completed!")
+
+
 
     def initialize_documents(self, pdf_directory: str = "./pdfs"):
         """Initialize the pipeline by loading, processing, and summarizing documents"""
@@ -67,7 +89,7 @@ class RAGPipeline:
 
         # Step 3: Create embeddings for all chunks using the DocumentRetriever's TF-IDF
         self.retriever.create_embeddings(chunked_docs, doc_mapping, chunk_metadata)
-
+        
         self.is_initialized = True
         print("\n--- RAG Pipeline Initialization Completed! ---")
         
