@@ -8,3 +8,5 @@ PyPDF2
 python-dotenv
 google-generativeai
 ipywidgets
+tenacity
+datasets
