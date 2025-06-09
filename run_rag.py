@@ -17,7 +17,7 @@ load_dotenv()
 
 # Import all required modules
 from rag_pipeline import RAGPipeline, rag_pipeline_pdf
-from load_docs import create_pdf_directory, list_pdf_files
+
 
 def main():
     """Main function to run the RAG demo"""
@@ -25,19 +25,12 @@ def main():
     
     # Configuration
     OPENAI_API_KEY=os.getenv("OPENAI_API_KEY")
-    PDF_DIR = "./pdfs"
     
     if not OPENAI_API_KEY:
         print("Please set your OpenAI API key in the OPENAI_API_KEY variable")
         return
     
-    # Setup PDF directory
-    create_pdf_directory(PDF_DIR)
-    pdf_files = list_pdf_files(PDF_DIR)
-    
-    if not pdf_files:
-        print("No PDF files found. Please add some PDFs to the pdfs directory.")
-        return
+   
     
     # Sample questions to demonstrate
     test_queries = [
@@ -53,7 +46,7 @@ def main():
     try:
         # Initialize pipeline
         rag = RAGPipeline(api_key=OPENAI_API_KEY)
-        rag.initialize_documents(pdf_directory=PDF_DIR)
+        rag.initialize_documents()
         
         # Run queries
         class_results = []
