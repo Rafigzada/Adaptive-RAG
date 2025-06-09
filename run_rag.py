@@ -25,6 +25,7 @@ def main():
     
     # Configuration
     OPENAI_API_KEY=os.getenv("OPENAI_API_KEY")
+    PDF_DIR = "./pdfs"
     
     if not OPENAI_API_KEY:
         print("Please set your OpenAI API key in the OPENAI_API_KEY variable")

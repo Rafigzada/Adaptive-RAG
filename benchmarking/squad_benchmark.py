@@ -20,7 +20,7 @@ def run_squad_benchmark(api_key: str, top_k: int = 3, sample_size: int = 20) -> 
 
     # Init RAG
     rag = RAGPipeline(api_key=api_key)
-    rag.initialize_documents()  # Uses Wikipedia
+    rag.initialize_wikipedia()  # Uses Wikipedia
 
     results = []
 
