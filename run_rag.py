@@ -35,9 +35,9 @@ def main():
     pdf_directory(PDF_DIR)
     pdf_files = list_pdf_files(PDF_DIR)
     
-    if not pdf_files:
-        print("No PDF files found. Please add some PDFs to the pdfs directory.")
-        return
+    #if not pdf_files:
+    #    print("No PDF files found. Please add some PDFs to the pdfs directory.")
+    #    return
 
     
     # Sample questions to demonstrate
@@ -54,7 +54,7 @@ def main():
     try:
         # Initialize pipeline
         rag = RAGPipeline(api_key=OPENAI_API_KEY)
-        rag.initialize_documents()
+        rag.initialize_documents(PDF_DIR)
         
         # Run queries
         class_results = []

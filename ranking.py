@@ -39,7 +39,7 @@ class DocumentReRanker:
             for j, doc in enumerate(batch_docs):
                 title = doc.get('metadata', {}).get('title', 'Unknown Title')
                 source = os.path.basename(doc.get('metadata', {}).get('source', 'Unknown Source'))
-                content_preview = doc.get('content', '')[:500]
+                content_preview = doc.get('content', '')[:1000]
                 
                 batch_candidates_text.append(f"Document {j+1} (Title: {title}, Source: {source}): {content_preview}...")
                 print(f"    Document {j+1} in batch: '{title}' (Source: {source})")

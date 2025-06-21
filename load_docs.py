@@ -2,6 +2,7 @@ import os
 import glob
 import shutil
 import PyPDF2
+import json
 from typing import List, Dict, Tuple, Any
 import google.generativeai as genai
 import time
@@ -9,6 +10,12 @@ import numpy as np
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 from datasets import load_dataset
+# Import common cache functions and specific hashing functions
+from caching import get_file_hash, load_cache, save_cache, PDF_HASH_CACHE_DIR
+
+# PDF_HASH_CACHE_DIR is now imported from caching.py
+# PDF_HASH_CACHE_FILE now constructed using imported PDF_HASH_CACHE_DIR
+PDF_HASH_CACHE_FILE = os.path.join(PDF_HASH_CACHE_DIR, "pdf_hashes.json")
 
 
 def load_wikipedia_articles(limit: int = 50) -> Tuple[List[str], List[Dict]]:
@@ -48,7 +55,6 @@ def pdf_directory(pdf_dir: str = "./pdfs") -> str:
     if not os.path.exists(pdf_dir):
         print(f"Warning: The specified PDF directory '{os.path.abspath(pdf_dir)}' does not exist.")
         print("Please create this directory and place your PDF files inside it.")
-        # We won't exit here; let the main script check for actual files and handle exiting.
     else:
         print(f"Using PDF directory: {os.path.abspath(pdf_dir)}")
     
@@ -60,36 +66,70 @@ def list_pdf_files(pdf_dir: str) -> List[str]:
     pdf_files = glob.glob(os.path.join(pdf_dir, "*.pdf"))
     if pdf_files:
         print(f"\nFound {len(pdf_files)} PDF files ready for processing:")
-        for pdf in pdf_files:
-            print(f"  - {os.path.basename(pdf)}")
     else:
         print(f"\nNo PDF files found in {pdf_dir}. Please upload some PDFs using the file browser.")
     return pdf_files
 
 
 def load_pdfs_from_directory(directory_path: str) -> Tuple[List[str], List[Dict]]:
-    """Load PDFs from the specified directory and extract their text content"""
+    """
+    Load PDFs from the specified directory and extract their text content.
+    Provides summarized logging for unchanged files and detailed logging for new/modified ones.
+    """
     documents = []
     document_metadata = []
+    processed_file_hashes = {} 
 
-    # Find all PDF files in the directory
+    new_modified_count = 0
+    existing_count = 0
+
+    # PDF_HASH_CACHE_DIR is ensured to exist by caching.py on import
+
+    # Load previous file hashes from cache using load_cache
+    # Note: For JSON files, load_cache would ideally need to support different serialization formats,
+    # or we keep JSON loading separate for specific cases like this.
+    # For now, I'm keeping the JSON loading/saving direct in load_docs for simplicity
+    # since it's a specific, small JSON file used only here, not a joblib object.
+    previous_hashes = {}
+    if os.path.exists(PDF_HASH_CACHE_FILE):
+        try:
+            with open(PDF_HASH_CACHE_FILE, 'r') as f:
+                previous_hashes = json.load(f)
+        except (json.JSONDecodeError, FileNotFoundError):
+            print(f"Warning: Could not load or parse PDF hash cache from {PDF_HASH_CACHE_FILE}. Starting fresh.")
+            previous_hashes = {}
+    
     pdf_files = glob.glob(os.path.join(directory_path, "*.pdf"))
 
+    if not pdf_files:
+        print(f"No PDF files found in {directory_path} to load.")
+        try:
+            with open(PDF_HASH_CACHE_FILE, 'w') as f:
+                json.dump({}, f, indent=4)
+        except Exception as e:
+            print(f"Error clearing PDF hash cache when no files found: {e}")
+        return [], []
+
     for file_path in pdf_files:
+        filename = os.path.basename(file_path)
+        current_file_hash = get_file_hash(file_path) 
+
+        if filename not in previous_hashes or previous_hashes[filename] != current_file_hash:
+            print(f"Loading NEW/MODIFIED PDF: {file_path}")
+            new_modified_count += 1
+        else:
+            existing_count += 1
+
         try:
             with open(file_path, 'rb') as file:
-                # Create PDF reader object
                 pdf_reader = PyPDF2.PdfReader(file)
-
-                # Extract text from each page and combine
                 text = ""
                 for page_num in range(len(pdf_reader.pages)):
                     page = pdf_reader.pages[page_num]
                     page_text = page.extract_text()
-                    if page_text:  # Check if text extraction was successful
+                    if page_text:  
                         text += page_text + "\n"
 
-                # Store document and its metadata
                 documents.append(text)
                 document_metadata.append({
                     "source": file_path,
@@ -98,9 +138,38 @@ def load_pdfs_from_directory(directory_path: str) -> Tuple[List[str], List[Dict]
                     "pages": len(pdf_reader.pages)
                 })
 
-                print(f"Loaded PDF: {file_path} ({len(pdf_reader.pages)} pages, {len(text)} characters)")
+                processed_file_hashes[filename] = current_file_hash
+
         except Exception as e:
             print(f"Error loading {file_path}: {e}")
+            if filename in processed_file_hashes:
+                del processed_file_hashes[filename] 
+
+    summary_message_parts = []
+    if new_modified_count > 0:
+        summary_message_parts.append(f"{new_modified_count} new/modified PDF file{'s' if new_modified_count > 1 else ''}")
+    if existing_count > 0:
+        summary_message_parts.append(f"{existing_count} existing PDF file{'s' if existing_count > 1 else ''}")
+
+    if summary_message_parts:
+        print(f"Summary: Loaded {' and '.join(summary_message_parts)}.")
+    else:
+        print("Summary: No PDF files were loaded successfully.")
+
+    files_currently_in_dir_set = {os.path.basename(f) for f in pdf_files}
+    files_to_remove_from_cache = [f_name for f_name in previous_hashes if f_name not in files_currently_in_dir_set]
+
+    final_hashes_to_save = {**previous_hashes, **processed_file_hashes}
+    for f_name in files_to_remove_from_cache:
+        if f_name in final_hashes_to_save:
+            del final_hashes_to_save[f_name]
+
+    # Save the updated hashes back to the cache (still direct JSON for this specific case)
+    try:
+        with open(PDF_HASH_CACHE_FILE, 'w') as f:
+            json.dump(final_hashes_to_save, f, indent=4)
+    except Exception as e:
+        print(f"Error saving PDF hash cache: {e}")
 
     return documents, document_metadata
 
@@ -108,18 +177,15 @@ def load_pdfs_from_directory(directory_path: str) -> Tuple[List[str], List[Dict]
 def chunk_documents(documents: List[str], chunk_size: int = 100, overlap: int = 20) -> Tuple[List[str], List[int]]:
     """Split longer documents into smaller chunks with overlap"""
     chunked_docs = []
-    doc_mapping = []  # To track which chunk belongs to which original document
+    doc_mapping = []  
 
     for doc_idx, doc in enumerate(documents):
         if len(doc) <= chunk_size:
-            # If document is already small enough, keep it as is
             chunked_docs.append(doc)
             doc_mapping.append(doc_idx)
         else:
-            # Split into overlapping chunks
             for i in range(0, len(doc), chunk_size - overlap):
                 chunk = doc[i:i + chunk_size]
-                # Only add chunk if it's substantial (at least half the chunk size)
                 if len(chunk) >= chunk_size // 2:
                     chunked_docs.append(chunk)
                     doc_mapping.append(doc_idx)
@@ -140,23 +206,17 @@ def adaptive_chunking(documents: List[str],
     chunk_metadata = []
 
     for doc_idx, (doc, metadata) in enumerate(zip(documents, document_metadata)):
-        # Choose chunk size based on document length
         if metadata["length"] > very_large_doc_threshold:
-            # For very large documents, use larger chunks with less overlap
             chunk_size = 800
             overlap = 100
         elif metadata["length"] > large_doc_threshold:
-            # For moderately large documents
             chunk_size = 500
             overlap = 75
         else:
-            # For smaller documents
             chunk_size = default_chunk_size
             overlap = default_overlap
 
-        # Apply chunking
         if len(doc) <= chunk_size:
-            # If document is small enough, keep it whole
             chunked_docs.append(doc)
             doc_mapping.append(doc_idx)
             chunk_metadata.append({
@@ -167,8 +227,6 @@ def adaptive_chunking(documents: List[str],
                 "is_full_doc": True
             })
         else:
-            # Split into chunks - using a sentence-aware approach when possible
-            # by trying to split at paragraph or sentence boundaries
             chunks = []
             chunk_start_indices = list(range(0, len(doc), chunk_size - overlap))
 
@@ -176,7 +234,6 @@ def adaptive_chunking(documents: List[str],
                 end_idx = min(start_idx + chunk_size, len(doc))
                 chunk = doc[start_idx:end_idx]
 
-                # Only add chunk if it's substantial (at least half the chunk size)
                 if len(chunk) >= chunk_size // 2:
                     chunked_docs.append(chunk)
                     doc_mapping.append(doc_idx)
@@ -213,13 +270,12 @@ def find_relevant_documents(
     query_vector = summary_vectorizer.transform([query])
     similarity_scores = summary_vectors.dot(query_vector.T).toarray().flatten()
 
-    # Get top_n_summaries indices
     top_indices = np.argsort(similarity_scores)[::-1][:top_n_summaries]
 
     relevant_docs_info = []
     for idx in top_indices:
         score = similarity_scores[idx]
-        if score > 0: # Only include if there's some similarity
+        if score > 0: 
             relevant_docs_info.append({
                 "doc_idx": document_summaries[idx]["doc_idx"],
                 "summary": document_summaries[idx]["summary"],

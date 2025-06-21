@@ -2,83 +2,106 @@ import google.generativeai as genai
 from typing import List, Dict, Any
 import time
 import logging
+import os
+from caching import get_document_summary_hash, load_cache, save_cache # Import common cache functions
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+# Removed direct cache path definitions, now managed by caching.py
+# The os.makedirs for SUMMARY_CACHE_DIR is also handled by caching.py on import
+
 class DocumentSummarizer:
     """
-    A class to handle the generation of document summaries using an LLM.
+    A class to handle the generation of document summaries using an LLM, with caching.
     """
     def __init__(self, api_key: str, model_name: str):
         genai.configure(api_key=api_key)
         self.summary_model = genai.GenerativeModel(model_name)
+        # Load summary cache using the generic load_cache function
+        # No identifier or params_hash needed for simple summary dict
+        self.summary_cache: Dict[str, str] = load_cache(cache_name="document_summaries", sub_dir="summaries") or {}
         logger.info(f"Document Summarizer model initialized ({model_name}).")
         print(f"\nDocument Summarizer model initialized ({model_name}).")
 
     def generate_summaries(self, documents: List[str], document_metadata: List[Dict]) -> List[Dict]:
         """
-        Generates concise summaries for a list of documents using the LLM.
+        Generates concise summaries for a list of documents using the LLM,
+        leveraging a cache to avoid redundant LLM calls.
         """
         print(f"\nGenerating summaries for {len(documents)} documents...")
         document_summaries = []
+        newly_generated_count = 0
+        loaded_from_cache_count = 0 
+
         for i, doc_text in enumerate(documents):
             doc_idx = i
             metadata = document_metadata[doc_idx]
             original_source = metadata.get("source", f"document_{doc_idx}")
             original_title = metadata.get("title", f"Document {doc_idx}")
-
-            prompt = f"Summarize the following document , focusing on its main topic and key points. Do not include introductory phrases like 'This document discusses' or 'The text is about'. Just the summary.\n\nDocument Title: {original_title}\n\nDocument Content:\n{doc_text[:8000]}..."
-
-            if i == 0: # Only print for the first document to avoid excessive output
-                print("\n--- DEBUG: Document Content Sent to LLM (First Document Only) ---")
-                print(f"Document Source: {original_source}")
-                print(f"Content (first 200 chars): {doc_text[:200]}{'...' if len(doc_text) > 200 else ''}")
-                print("---------------------------------------------------------------\n")
             
-            try:
-                response = self.summary_model.generate_content(
-                    prompt,
-                    generation_config={
-                        "max_output_tokens": 800, # Concise summary
-                        "temperature": 0.1,
-                    }
-                )
-                summary_text = response.text.strip()
+            doc_hash = get_document_summary_hash(doc_text, metadata)
 
-                if i == 0: # Only print for the first document processed
-                    print("\n--- TEST OUTPUT: First Document Summary Preview ---")
+            summary_text = None
+            if doc_hash in self.summary_cache:
+                summary_text = self.summary_cache[doc_hash]
+                loaded_from_cache_count += 1 
+            else:
+                prompt = f"Summarize the following document , focusing on its main topic and key points. Do not include introductory phrases like 'This document discusses' or 'The text is about'. Just the summary.\n\nDocument Title: {original_title}\n\nDocument Content:\n{doc_text[:8000]}..."
+
+                if i == 0: 
+                    print("\n--- DEBUG: Document Content Sent to LLM (First Document Only) ---")
                     print(f"Document Source: {original_source}")
-                    print(f"Summary : {summary_text}")
-                    print("---------------------------------------------------\n")
-                
-                document_summaries.append({
-                    "doc_idx": doc_idx,
-                    "summary": summary_text,
-                    "original_source": original_source,
-                    "original_title": original_title,
-                    "original_doc_text_preview": doc_text[:500] # For debugging
-                })
-                print(f"  - Summary for '{original_title}' generated.")
-            except genai.types.BlockedPromptException:
-                print(f"  - Warning: Summarization for '{original_title}' was blocked due to safety concerns.")
-                document_summaries.append({
-                    "doc_idx": doc_idx,
-                    "summary": "[Blocked due to safety concerns]",
-                    "original_source": original_source,
-                    "original_title": original_title,
-                    "original_doc_text_preview": doc_text[:500]
-                })
-            except Exception as e:
-                print(f"  - Error generating summary for '{original_title}': {e}")
-                document_summaries.append({
-                    "doc_idx": doc_idx,
-                    "summary": "[Error generating summary]",
-                    "original_source": original_source,
-                    "original_title": original_title,
-                    "original_doc_text_preview": doc_text[:500]
-                })
-            time.sleep(0.1) # Small delay to avoid hitting rate limits
+                    print(f"Content (first 200 chars): {doc_text[:200]}{'...' if len(doc_text) > 200 else ''}")
+                    print("---------------------------------------------------------------\n")
+                    
+                try:
+                    response = self.summary_model.generate_content(
+                        prompt,
+                        generation_config={
+                            "max_output_tokens": 800,
+                            "temperature": 0.1,
+                        }
+                    )
+                    summary_text = response.text.strip()
+                    self.summary_cache[doc_hash] = summary_text 
+                    newly_generated_count += 1
 
-        print("Summary generation completed.")
+                    if i == 0: 
+                        print("\n--- TEST OUTPUT: First Document Summary Preview ---")
+                        print(f"Document Source: {original_source}")
+                        print(f"Summary : {summary_text}")
+                        print("---------------------------------------------------\n")
+                    
+                    print(f"  - Summary for '{original_title}' generated by LLM and cached.")
+                except genai.types.BlockedPromptException:
+                    summary_text = "[Blocked due to safety concerns]"
+                    print(f"  - Warning: Summarization for '{original_title}' was blocked due to safety concerns.")
+                except Exception as e:
+                    summary_text = "[Error generating summary]"
+                    print(f"  - Error generating summary for '{original_title}': {e}")
+                time.sleep(0.1) 
+
+            document_summaries.append({
+                "doc_idx": doc_idx,
+                "summary": summary_text,
+                "original_source": original_source,
+                "original_title": original_title,
+                "original_doc_text_preview": doc_text[:500] 
+            })
+            
+        # Save summary cache using the generic save_cache function
+        save_cache(self.summary_cache, cache_name="document_summaries", sub_dir="summaries")
+        
+        summary_message_parts = []
+        if newly_generated_count > 0:
+            summary_message_parts.append(f"{newly_generated_count} summaries newly generated by LLM")
+        if loaded_from_cache_count > 0:
+            summary_message_parts.append(f"{loaded_from_cache_count} loaded from cache")
+
+        if summary_message_parts:
+            print(f"\nSummary generation completed. {' and '.join(summary_message_parts)}.")
+        else:
+            print("\nSummary generation completed. No summaries were processed.")
+            
         return document_summaries

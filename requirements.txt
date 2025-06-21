@@ -10,3 +10,4 @@ google-generativeai
 ipywidgets
 tenacity
 datasets
+chromadb sentence-transformers
