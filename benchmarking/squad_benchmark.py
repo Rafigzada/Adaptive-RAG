@@ -29,12 +29,10 @@ def run_squad_benchmark(api_key: str, top_k: int = 3, sample_size: int = 20, dir
     Returns:
         List[Dict]: A list of dictionaries containing benchmark results.
     """
-    # Load questions and answers
     squad_data = load_dataset("squad", split=f"validation[:{sample_size}]")
 
-    # Init RAG
     rag = RAGPipeline(api_key=api_key)
-    rag.initialize_wikipedia()  # Uses Wikipedia as the corpus
+    rag.initialize_wikipedia()
 
     results = []
 
@@ -101,10 +99,10 @@ if __name__ == "__main__":
     from dotenv import load_dotenv
 
     load_dotenv()
-    API_KEY = os.getenv("OPENAI_API_KEY") # Ensure you're using GEMINI_API_KEY or your actual key env var
+    API_KEY = os.getenv("OPENAI_API_KEY")
 
     if not API_KEY:
-        print("Set your GEMINI_API_KEY in the .env file") # Updated env var name
+        print("Set your GEMINI_API_KEY in the .env file")
     else:
         # Run benchmark with direct retrieval for SQuAD
         results = run_squad_benchmark(API_KEY, sample_size=20, direct_retrieval=True)
