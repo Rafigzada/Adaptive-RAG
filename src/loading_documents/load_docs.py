@@ -10,11 +10,10 @@ import numpy as np
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 from datasets import load_dataset
-# Import common cache functions and specific hashing functions
-from caching import get_file_hash, load_cache, save_cache, PDF_HASH_CACHE_DIR
 
-# PDF_HASH_CACHE_DIR is now imported from caching.py
-# PDF_HASH_CACHE_FILE now constructed using imported PDF_HASH_CACHE_DIR
+
+from src.caching.caching import get_file_hash, load_cache, save_cache, PDF_HASH_CACHE_DIR
+
 PDF_HASH_CACHE_FILE = os.path.join(PDF_HASH_CACHE_DIR, "pdf_hashes.json")
 
 
@@ -83,13 +82,6 @@ def load_pdfs_from_directory(directory_path: str) -> Tuple[List[str], List[Dict]
     new_modified_count = 0
     existing_count = 0
 
-    # PDF_HASH_CACHE_DIR is ensured to exist by caching.py on import
-
-    # Load previous file hashes from cache using load_cache
-    # Note: For JSON files, load_cache would ideally need to support different serialization formats,
-    # or we keep JSON loading separate for specific cases like this.
-    # For now, I'm keeping the JSON loading/saving direct in load_docs for simplicity
-    # since it's a specific, small JSON file used only here, not a joblib object.
     previous_hashes = {}
     if os.path.exists(PDF_HASH_CACHE_FILE):
         try:

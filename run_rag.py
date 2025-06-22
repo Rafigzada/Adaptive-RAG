@@ -17,7 +17,7 @@ load_dotenv()
 
 # Import all required modules
 from rag_pipeline import RAGPipeline, rag_pipeline_pdf
-from load_docs import pdf_directory, list_pdf_files
+from src.loading_documents.load_docs import pdf_directory, list_pdf_files
 
 def main():
     """Main function to run the RAG demo"""
@@ -59,7 +59,7 @@ def main():
         # Run queries
         class_results = []
         for query in test_queries:
-            result = rag.query(query, k=3)
+            result = rag.query(query, k=4)
             class_results.append(result)
             print("\n" + "="*70 + "\n")
         

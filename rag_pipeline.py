@@ -3,75 +3,85 @@ import time
 import sys
 import os
 from typing import Dict, List, Any, Tuple
-from sklearn.metrics.pairwise import cosine_similarity
-import numpy as np
-from sklearn.feature_extraction.text import TfidfVectorizer # Explicitly import here for summary vectorizer
+import numpy as np 
 
-# Add current directory to Python path to find local modules
+
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-# Import CorpusInitializer from initializer.py
 from initializer import CorpusInitializer
-
-# Import caching functions from the new caching.py
-from caching import load_cache, save_cache, clear_rag_cache, get_vectorizer_params_hash
-
-# Import other existing modules
-from load_docs import find_relevant_documents
-from retrieval import DocumentRetriever
-from augmentation import create_augmented_prompt, create_chat_messages, format_context_with_citations
-from generation import AnswerGenerator
-from summarization import DocumentSummarizer
-from ranking import DocumentReRanker
+from src.caching.caching import clear_rag_cache
+from src.retrieval.retrieval import DocumentRetriever
+from src.augmentation.augmentation import create_augmented_prompt, create_chat_messages, format_context_with_citations
+from src.generation.generation import AnswerGenerator
+from src.generation.summarization import DocumentSummarizer
+from src.generation.ranking import DocumentReRanker
 
 
 class RAGPipeline:
-    def __init__(self, api_key: str, answer_model_name: str = 'gemini-1.5-flash'):
+    def __init__(self,
+                 api_key: str,
+                 answer_model_name: str = 'gemini-1.5-flash',
+                 full_doc_relevance_threshold: float = 1.5,  
+                 summary_relevance_threshold: float = 1.5    
+                 ):
+        print("Initializing RAGPipeline components...")
         self.retriever = DocumentRetriever()
         self.generator = AnswerGenerator(api_key, answer_model_name)
         self.api_key = api_key
-        
-        # Initialize the CorpusInitializer
-        self.corpus_initializer = CorpusInitializer()
-        # Pass the retriever instance to CorpusInitializer so it can set the retriever's chunk data
-        self.corpus_initializer.retriever_instance = self.retriever 
 
-        self.document_summaries: List[Dict] = [] # These will only be generated if the condition is met
-        self.summary_vectorizer: TfidfVectorizer = None
-        self.summary_vectors: Any = None # Sparse matrix
+        self.full_doc_relevance_threshold = full_doc_relevance_threshold
+        self.summary_relevance_threshold = summary_relevance_threshold
+
+        self.corpus_initializer = CorpusInitializer()
+        self.corpus_initializer.retriever_instance = self.retriever
+
+        self.document_summarizer = DocumentSummarizer(self.generator) 
+        self.document_reranker = DocumentReRanker(self.generator)   
 
         self.is_initialized = False
-        self.document_summarizer = DocumentSummarizer(api_key, answer_model_name)
-        self.document_reranker = DocumentReRanker(api_key, answer_model_name)
+        print("RAGPipeline components initialized.")
+
 
     def initialize_wikipedia(self):
         """Initialize the pipeline using Wikipedia articles via CorpusInitializer."""
+        print("\n--- Initializing Wikipedia documents and creating embeddings ---")
+        init_start = time.time()
         self.corpus_initializer.initialize_wikipedia_corpus(self.retriever)
         self.is_initialized = True
+        init_end = time.time()
+        print(f"--- Wikipedia initialization complete in {init_end - init_start:.2f} seconds ---")
+
 
     def initialize_documents(self, pdf_directory: str = "./pdfs"):
         """Initialize the pipeline by loading, processing, and summarizing documents via CorpusInitializer."""
+        print("\n--- Initializing documents and creating embeddings ---")
+        init_start = time.time()
         self.corpus_initializer.initialize_pdf_corpus(self.retriever, pdf_directory)
         self.is_initialized = True
-        
+        init_end = time.time()
+        print(f"--- Document initialization complete in {init_end - init_start:.2f} seconds ---")
+
+
     def clear_cache(self):
-        """Clears the entire RAG cache using the utility function from caching.py."""
+        """Clears the entire RAG cache using the utility function from caching.py.
+            Also includes a basic mechanism to clear ChromaDB collections."""
+        print("\n--- Clearing RAG Pipeline Cache ---")
         clear_rag_cache()
+        # Clear all ChromaDB collections managed by this retriever
+        try:
+            # List collections using the client directly
+            collections_to_delete = self.retriever.chroma_client.list_collections()
+            for collection_info in collections_to_delete:
+                print(f"Deleting ChromaDB collection: {collection_info.name}")
+                self.retriever.chroma_client.delete_collection(name=collection_info.name)
+            print("ChromaDB collections cleared.")
+        except Exception as e:
+            print(f"Error clearing ChromaDB collections: {e}")
+        print("--- Cache Cleared ---")
 
-
-    def query(self, query: str, k: int = 3, use_chat_format: bool = True, rerank_top_k: int = 3, direct_retrieval_only: bool = False) -> Dict[str, Any]:
+    def query(self, query: str, k: int = 4, use_chat_format: bool = True, rerank_top_k: int = 4, direct_retrieval_only: bool = False) -> Dict[str, Any]:
         """
         Process a single query through the complete RAG pipeline.
-        
-        Args:
-            query (str): The user's query.
-            k (int): The number of final relevant documents to use for answer generation.
-            use_chat_format (bool): Whether to format the prompt as chat messages.
-            rerank_top_k (int): The number of documents to keep after re-ranking.
-            direct_retrieval_only (bool): If True, bypasses initial full document relevance
-                                          check and summarization steps, going directly
-                                          to chunk retrieval. Useful for benchmarking where
-                                          the initial corpus is known to be relevant (e.g., SQuAD).
         """
         if not self.is_initialized:
             raise ValueError("Pipeline not initialized. Call initialize_documents() or initialize_wikipedia() first.")
@@ -83,137 +93,158 @@ class RAGPipeline:
         pipeline_start = time.time()
         summarization_time = 0.0
         pre_filter_time = 0.0
-        pre_filtered_relevant_docs_info = [] # Default empty list
-        pre_filtered_doc_indices = set() # Default empty set
+        
+        filtered_relevant_full_docs = []
+        filtered_relevant_summaries = []
+        
+        # This will store the document indices to be used for chunk filtering
+        doc_indices_for_chunk_retrieval = set() 
+        use_summary_prefilter = False
 
         # Conditional path for direct retrieval or full pipeline
         if not direct_retrieval_only:
-            # Step 1: Initial full document relevance check using TF-IDF (always done)
-            print("\n--- Initial Full Document Relevance Check (TF-IDF) ---")
-            if self.corpus_initializer.full_doc_vectorizer is None or self.corpus_initializer.full_doc_vectors is None:
-                raise RuntimeError("Full document TF-IDF vectorizer not initialized. Please run initialize_documents() or initialize_wikipedia().")
-                
-            query_vector_full_doc = self.corpus_initializer.full_doc_vectorizer.transform([query])
-            full_doc_similarity_scores = cosine_similarity(query_vector_full_doc, self.corpus_initializer.full_doc_vectors).flatten()
+            # Step 1: Initial full document relevance check using ChromaDB
+            print("\n--- Initial Full Document Relevance Check (ChromaDB) ---")
+            initial_full_doc_retrieve_k = 10
+            
+            # This returns a list of dicts: [{'content': 'text', 'metadata': {}, 'score': 0.x}]
+            retrieved_full_docs_raw, _ = self.retriever.retrieve_relevant_docs(query, k=initial_full_doc_retrieve_k, collection_type="full_doc")
 
-            relevant_full_doc_count = np.sum(full_doc_similarity_scores > 1e-9)
-            print(f"  Found {relevant_full_doc_count} full documents with positive TF-IDF similarity.")
+            # Filter full documents by relevance threshold
+            for i, doc_info in enumerate(retrieved_full_docs_raw):
+                doc_distance = doc_info.get('score', float('inf'))
+                doc_text = doc_info.get('content', 'N/A')
+                doc_meta = doc_info.get('metadata', {})
 
-            top_n_full_docs_for_display = 5
-            top_full_doc_indices = np.argsort(full_doc_similarity_scores)[::-1][:top_n_full_docs_for_display]
-            if any(full_doc_similarity_scores[idx] > 0 for idx in top_full_doc_indices):
-                for rank, idx in enumerate(top_full_doc_indices):
-                    score = full_doc_similarity_scores[idx]
-                    if score > 0:
-                        doc_title = self.corpus_initializer.document_metadata[idx].get("title", f"Document {idx + 1}")
-                        doc_source = self.corpus_initializer.document_metadata[idx].get("source", "N/A")
-                        print(f"    Rank {rank+1}: Doc '{doc_title}' (Source: {os.path.basename(doc_source)}) - Score: {score:.4f}")
-            else:
-                print("    - No significant similarity found with full documents using TF-IDF for display.")
-            print("--------------------------------------------------")
+                if doc_distance <= self.full_doc_relevance_threshold:
+                    filtered_relevant_full_docs.append(doc_info)
+            
+            print(f"\nRetrieved {len(retrieved_full_docs_raw)} full documents from ChromaDB (raw).")
+            print(f"Filtered to {len(filtered_relevant_full_docs)} relevant full documents (distance <= {self.full_doc_relevance_threshold}).")
 
-            use_summary_prefilter = False # Flag to control subsequent steps
-
-            if relevant_full_doc_count < 5:
-                print("\n  **Less than 5 relevant full documents found. Bypassing Document Summarization and Summary Pre-filter.**")
-            else:
-                print("\n  **5 or more relevant full documents found. Proceeding with Document Summarization and Summary Pre-filter.**")
+            # --- Conditional Logic based on filtered_relevant_full_docs count ---
+            if len(filtered_relevant_full_docs) >= 5:
                 use_summary_prefilter = True
+                print(f"\n  **{len(filtered_relevant_full_docs)} relevant full documents found via ChromaDB. Proceeding with Document Summarization and Summary Pre-filter.**")
 
                 summarization_start_time = time.time()
-                self.document_summaries = self.document_summarizer.generate_summaries(
+                # Generate summaries first (this will use the rag_cache if available)
+                self.corpus_initializer.document_summaries = self.document_summarizer.generate_summaries(
                     self.corpus_initializer.documents, self.corpus_initializer.document_metadata
                 )
-                
-                tfidf_params_for_summaries = self.corpus_initializer.get_tfidf_params()
-                current_doc_identifier = self.corpus_initializer.get_doc_identifier()
-                tfidf_params_hash = self.corpus_initializer.get_tfidf_params_hash()
-
-                cache_source_type = "pdf" if self.corpus_initializer.document_metadata and \
-                                             self.corpus_initializer.document_metadata[0].get('source', '').lower().endswith('.pdf') else "wikipedia"
-                
-                loaded_summary_tfidf = load_cache(
-                    cache_name=f"{cache_source_type}_summary_tfidf",
-                    sub_dir="vectors",
-                    identifier=current_doc_identifier,
-                    params_hash=tfidf_params_hash
-                )
-                
-                if loaded_summary_tfidf:
-                    self.summary_vectorizer, self.summary_vectors = loaded_summary_tfidf
-                    print(f"\nLoaded cached summary TF-IDF vectorizer. Summary vectors shape: {self.summary_vectors.shape}")
-                elif self.document_summaries:
-                    summary_texts = [doc_summary["summary"] for doc_summary in self.document_summaries]
-                    
-                    self.summary_vectorizer = TfidfVectorizer(**tfidf_params_for_summaries)
-                    self.summary_vectors = self.summary_vectorizer.fit_transform(summary_texts)
-                    print(f"\nFitted summary TF-IDF vectorizer. Summary vectors shape: {self.summary_vectors.shape}")
-                    
-                    save_cache(
-                        (self.summary_vectorizer, self.summary_vectors),
-                        cache_name=f"{cache_source_type}_summary_tfidf",
-                        sub_dir="vectors",
-                        identifier=current_doc_identifier,
-                        params_hash=tfidf_params_hash
-                    )
-                else:
-                    print("\nNo summaries generated or loaded, summary TF-IDF vectorizer setup skipped.")
-                
                 summarization_time = time.time() - summarization_start_time
+                print(f"  Document summarization completed in {summarization_time:.2f} seconds.")
 
-                if self.summary_vectorizer is not None and \
-                   self.summary_vectors is not None and \
-                   self.summary_vectors.shape[0] > 0 and \
-                   self.document_summaries:
-                    pre_filter_start_time = time.time()
-                    pre_filtered_relevant_docs_info = find_relevant_documents(
-                        query, self.document_summaries, self.summary_vectorizer, self.summary_vectors, top_n_summaries=5
-                    )
-                    pre_filter_time = time.time() - pre_filter_start_time
-                    pre_filtered_doc_indices = {doc_info['doc_idx'] for doc_info in pre_filtered_relevant_docs_info}
+                # Add summaries to ChromaDB
+                self.retriever.create_summary_embeddings(
+                    self.corpus_initializer.document_summaries, self.corpus_initializer.doc_identifier
+                )
+
+                # Step 2: Summary pre-filtering using ChromaDB
+                pre_filter_start_time = time.time()
+                initial_summary_retrieve_k = 10
+                retrieved_summaries_raw, _ = self.retriever.retrieve_relevant_docs(query, k=initial_summary_retrieve_k, collection_type="summary")
+                
+                # Filter summaries by relevance threshold
+                for i, sum_info in enumerate(retrieved_summaries_raw):
+                    sum_distance = sum_info.get('score', float('inf'))
+                    sum_text = sum_info.get('content', 'N/A')
+                    sum_meta = sum_info.get('metadata', {})
+
+                    if sum_distance <= self.summary_relevance_threshold:
+                        filtered_relevant_summaries.append(sum_info)
+                
+                pre_filter_time = time.time() - pre_filter_start_time
+                print(f"  Summary pre-filtering completed in {pre_filter_time:.2f} seconds.")
+                
+                print(f"Retrieved {len(retrieved_summaries_raw)} summaries from ChromaDB (raw).")
+                print(f"Filtered to {len(filtered_relevant_summaries)} relevant summaries (distance <= {self.summary_relevance_threshold}).")
+
+                if filtered_relevant_summaries:
+                    filtered_relevant_summaries.sort(key=lambda x: x['score'])
+                    top_5_summary_docs = filtered_relevant_summaries[:7] 
+                    doc_indices_for_chunk_retrieval = {
+                        summary.get("metadata", {}).get("original_doc_idx")
+                        for summary in top_5_summary_docs
+                        if summary.get("metadata", {}).get("original_doc_idx") is not None
+                    }
+                    print(f"\n  Summary pre-filter selected {len(doc_indices_for_chunk_retrieval)} unique documents (from top 5 summaries) for chunk retrieval.")
                 else:
-                    print("  - Summary vectorizer/vectors or summaries not available. Skipping summary-based pre-filter.")
-                    pre_filtered_doc_indices = set()
-                    use_summary_prefilter = False # Fallback
+                    print("  - No sufficiently relevant summaries found for pre-filtering. Falling back to initial full document filter for chunks.")
+                    use_summary_prefilter = False # Fallback if summaries yielded nothing after filtering
+                    # Fallback to initial full document indices if summary filtering failed
+                    doc_indices_for_chunk_retrieval = {
+                        doc_info.get("metadata", {}).get("original_doc_idx")
+                        for doc_info in filtered_relevant_full_docs
+                        if doc_info.get("metadata", {}).get("original_doc_idx") is not None
+                    }
+                    print(f"  - Using {len(doc_indices_for_chunk_retrieval)} unique document indices from initial full document check for chunk retrieval.")
+
+            else: # Less than 5 relevant full documents found in initial check
+                use_summary_prefilter = False
+                print("\n  **Fewer than 5 sufficiently relevant full documents found via ChromaDB. Bypassing Document Summarization and Summary Pre-filter.**")
+                # In this case, use the indices of the filtered relevant full documents directly for chunk retrieval
+                doc_indices_for_chunk_retrieval = {
+                    doc_info.get("metadata", {}).get("original_doc_idx")
+                    for doc_info in filtered_relevant_full_docs
+                    if doc_info.get("metadata", {}).get("original_doc_idx") is not None
+                }
+                print(f"  - Using {len(doc_indices_for_chunk_retrieval)} unique document indices from initial full document check for chunk retrieval.")
+
         else: # direct_retrieval_only is True
             print("\n--- Bypassing Full Document Relevance Check and Summarization (direct_retrieval_only=True) ---")
-            use_summary_prefilter = False # Ensure this is False when bypassing
+            use_summary_prefilter = False
+            # In direct retrieval, we don't have pre-filtered docs to guide, so we retrieve broadly for chunks
+            # and let the re-ranker handle it. No specific doc_indices_for_chunk_retrieval from previous steps.
+            doc_indices_for_chunk_retrieval = set()
+            print("  - Chunk retrieval will not be pre-filtered by document indices in direct_retrieval_only mode.")
 
-        # Step 2: Retrieve relevant chunks from the main chunk index
+
+        # Step 3: Retrieve relevant chunks from ChromaDB
         retrieval_start_time = time.time()
-        # When direct_retrieval_only is True, we retrieve a larger pool of chunks
-        # as there's no pre-filtering from document summaries.
-        retrieve_k_multiplier = 10 if not direct_retrieval_only else 20 # Retrieve more if no pre-filter
-        retrieved_chunks_all, _ = self.retriever.retrieve_relevant_docs(query, k=k*retrieve_k_multiplier)
-        retrieval_time_full = time.time() - retrieval_start_time
+        initial_retrieve_k = 30
 
-        # Conditional logic for processing retrieved chunks based on the decision
-        processing_start_time = time.time()
-        if not use_summary_prefilter:
-            # If summarization was bypassed (either by logic or direct_retrieval_only),
-            # directly use top chunks from overall retrieval
-            print("  - Summarization bypassed or direct retrieval. Using top chunks from overall retrieval for processing.")
-            retrieved_docs_for_processing = retrieved_chunks_all[:k*5] # Take a larger pool for re-ranking
-            processing_message_prefix = f"Processed {len(retrieved_docs_for_processing)} chunks (from overall retrieval) into"
+        chunk_retrieval_where_clause = None
+        if doc_indices_for_chunk_retrieval:
+            chunk_retrieval_where_clause = {"original_doc_idx": {"$in": list(doc_indices_for_chunk_retrieval)}}
+            print(f"\n--- Retrieving chunks with filter (original_doc_idx IN {len(doc_indices_for_chunk_retrieval)} docs) ---")
+            print(f"  Filtering chunks to documents with indices: {list(doc_indices_for_chunk_retrieval)}")
         else:
-            # If summarization was used, filter chunks by its results
-            retrieved_docs_from_prefiltered = [
-                chunk_data for chunk_data in retrieved_chunks_all
-                if chunk_data.get("metadata", {}).get("original_doc_idx") in pre_filtered_doc_indices
-            ]
-            if not retrieved_docs_from_prefiltered:
-                print("  - No chunks found from summary-pre-filtered documents. Falling back to top-K from all chunks.")
-                retrieved_docs_for_processing = retrieved_chunks_all[:k*2] # Fallback if specific pre-filter yielded no chunks
-            else:
-                retrieved_docs_for_processing = retrieved_docs_from_prefiltered
-            processing_message_prefix = f"Processed {len(retrieved_docs_for_processing)} chunks (after summary pre-filter) into"
+            print("\n--- Retrieving chunks without document index filter ---")
 
-        # Step 3: Process and merge chunks from the selected list
+
+        retrieved_chunks_all, _ = self.retriever.retrieve_relevant_docs(
+            query, 
+            k=initial_retrieve_k, 
+            collection_type="chunk",
+            where_clause=chunk_retrieval_where_clause 
+        )
+        retrieval_time_full = time.time() - retrieval_start_time
+        print(f"\n--- Retrieved {len(retrieved_chunks_all)} chunks from ChromaDB ---")
+
+        # Step 4: Process and merge chunks (now, retrieved_chunks_all already contains only desired chunks)
+        processing_start_time = time.time()
+        
+        
+        if not retrieved_chunks_all:
+            print("  - No chunks were retrieved after applying document index filter. Cannot proceed with processing.")
+            # Early exit or return empty results if no chunks
+            return {
+                "query": query,
+                "answer": "No relevant documents or chunks found to answer the query.",
+                "metrics": {}
+            }
+
+        processing_message_prefix = f"Processed {len(retrieved_chunks_all)} chunks (from " + \
+                                    ("summary pre-filtered documents" if use_summary_prefilter and doc_indices_for_chunk_retrieval else \
+                                     "initial relevant full documents" if doc_indices_for_chunk_retrieval else \
+                                     "all relevant chunks retrieved directly") + ") into"
+
         processed_docs_for_rerank = self.retriever.process_retrieved_chunks(
-            retrieved_docs_for_processing, max_chunks_per_doc=3
+            retrieved_chunks_all, max_chunks_per_doc=3
         )
         # Ensure we don't send too many to the expensive re-ranker
-        processed_docs_for_rerank = processed_docs_for_rerank[:15] # Limit the number sent to re-ranker
+        processed_docs_for_rerank = processed_docs_for_rerank[:15]
         processing_time = time.time() - processing_start_time
         print("---------------------------------------------------------------")
         print(f"\n{processing_message_prefix} {len(processed_docs_for_rerank)} document groups for re-ranking.")
@@ -225,20 +256,20 @@ class RAGPipeline:
                 print(f"  Group {i+1}:")
                 print(f"    Title: {doc_group.get('metadata', {}).get('title', 'N/A')}")
                 print(f"    Source: {os.path.basename(doc_group.get('metadata', {}).get('source', 'N/A'))}")
-                print(f"    Content Preview: {doc_group.get('content', '')[:20]}...")
+                print(f"    Content Preview: {doc_group.get('content', '')[:100]}...")
                 print(f"    Length of Content: {len(doc_group.get('content'))}")
         else:
             print("  No document groups prepared for re-ranking.")
         print("---------------------------------------------------------------")
 
 
-        # Step 4: Re-rank the processed documents using the DocumentReRanker instance
+        # Step 5: Re-rank the processed documents using the DocumentReRanker instance
         re_ranking_start_time = time.time()
         final_retrieved_docs = self.document_reranker.rerank_documents(
             query, processed_docs_for_rerank, rerank_top_k
         )
         reranking_time = time.time() - re_ranking_start_time
-        print(f"Re-ranking completed in {reranking_time:.4f} seconds.")
+        print(f"\nRe-ranking completed in {reranking_time:.4f} seconds.")
 
         # --- Print: Re-ranked Documents (before final context slicing) ---
         print("\n\n--- Re-ranked Documents (before final context slicing) ---")
@@ -247,14 +278,14 @@ class RAGPipeline:
                 print(f"    Rank {i+1} (Rerank Score: {doc.get('rerank_score', 'N/A'):.2f}):")
                 print(f"    Title: {doc.get('metadata', {}).get('title', 'N/A')}")
                 print(f"    Source: {os.path.basename(doc.get('metadata', {}).get('source', 'N/A'))}")
-                print(f"    Content Preview: {doc.get('content', '')[:30]}...")
+                print(f"    Content Preview: {doc.get('content', '')[:100]}...")
                 print(f"    Length of Content: {len(doc.get('content'))}")
         else:
             print("  No documents were successfully re-ranked.")
         print("-------------------------------------------------------")
 
 
-        # Step 5: Create augmented prompt using the re-ranked documents (only take top k as specified by query param)
+        # Step 6: Create augmented prompt using the re-ranked documents (only take top k as specified by query param)
         final_context_docs = final_retrieved_docs[:k]
         print(f"Using {len(final_context_docs)} documents for final context.")
 
@@ -265,7 +296,7 @@ class RAGPipeline:
                 print(f"\n  Context Doc {i+1}:")
                 print(f"    Title: {doc.get('metadata', {}).get('title', 'N/A')}")
                 print(f"    Source: {os.path.basename(doc.get('metadata', {}).get('source', 'N/A'))}")
-                print(f"    Content Preview: {doc.get('content', '')[:30]}...")
+                print(f"    Content Preview: {doc.get('content', '')[:100]}...")
                 print(f"    Length of Content: {len(doc.get('content'))}")
         else:
             print("  No documents sent as final context to the LLM.")
@@ -274,7 +305,7 @@ class RAGPipeline:
         if use_chat_format:
             context = format_context_with_citations(final_context_docs)
             messages = create_chat_messages(query, context)
-            prompt_time = 0.001 # Minimal time for simple formatting
+            prompt_time = 0.001
             answer, generation_time = self.generator.generate_answer_with_messages(messages)
         else:
             prompt, prompt_time = create_augmented_prompt(query, final_context_docs)
@@ -286,17 +317,18 @@ class RAGPipeline:
         print(f"Query: {query}")
         print(f"Answer: {answer}")
         print(f"\nPerformance Metrics:")
-        # Adjust metrics based on whether steps were bypassed
-        if not direct_retrieval_only:
-            print(f"- Initial Full Doc Relevance Check time: {retrieval_start_time - pipeline_start:.4f}s")
-            print(f"- Summarization (if used) time: {summarization_time:.4f}s")
-            print(f"- Pre-filter (Summary TF-IDF if used) time: {pre_filter_time:.4f}s")
-        else:
-            print("- Initial Full Doc Relevance Check: Bypassed")
-            print("- Summarization: Bypassed")
-            print("- Pre-filter: Bypassed")
+        initial_full_doc_check_duration = retrieval_start_time - pipeline_start if not direct_retrieval_only else 0.0
 
-        print(f"- Retrieval (Chunk TF-IDF) time: {retrieval_time_full:.4f}s")
+        if not direct_retrieval_only:
+            print(f"- Initial Full Doc Retrieval & Filter time: {initial_full_doc_check_duration:.4f}s")
+            print(f"- Summarization generation time: {summarization_time:.4f}s")
+            print(f"- Summary Pre-filter (ChromaDB) time: {pre_filter_time:.4f}s")
+        else:
+            print("- Initial Full Doc Retrieval & Filter: Bypassed")
+            print("- Summarization: Bypassed")
+            print("- Summary Pre-filter: Bypassed")
+
+        print(f"- Chunk Retrieval (ChromaDB) time: {retrieval_time_full:.4f}s")
         print(f"- Processing (Merging chunks) time: {processing_time:.4f}s")
         print(f"- Re-ranking time: {reranking_time:.4f}s")
         print(f"- Prompt creation time: {prompt_time:.4f}s")
@@ -305,13 +337,13 @@ class RAGPipeline:
 
         return {
             "query": query,
-            "pre_filtered_docs_info": pre_filtered_relevant_docs_info,
-            "retrieved_chunks_raw": retrieved_chunks_all,
+            "pre_filtered_docs_info": filtered_relevant_summaries,
+            "retrieved_chunks_raw": retrieved_chunks_all, # This now correctly holds the filtered chunks from ChromaDB
             "processed_docs_before_rerank": processed_docs_for_rerank,
             "final_retrieved_docs": final_retrieved_docs,
             "answer": answer,
             "metrics": {
-                "initial_full_doc_check_time": (retrieval_start_time - pipeline_start) if not direct_retrieval_only else 0.0,
+                "initial_full_doc_check_time": initial_full_doc_check_duration,
                 "summarization_time": summarization_time,
                 "pre_filter_time": pre_filter_time,
                 "retrieval_time": retrieval_time_full,
@@ -323,7 +355,7 @@ class RAGPipeline:
             }
         }
 
-    def batch_query(self, queries: List[str], k: int = 3, rerank_top_k: int = 3, direct_retrieval_only: bool = False) -> List[Dict[str, Any]]:
+    def batch_query(self, queries: List[str], k: int = 3, rerank_top_k: int = 4, direct_retrieval_only: bool = False) -> List[Dict[str, Any]]:
         """Processes a batch of queries."""
         results = []
         for query in queries:
@@ -333,7 +365,7 @@ class RAGPipeline:
         return results
 
 
-def rag_pipeline_pdf(query: str, api_key: str, pdf_directory: str = "./pdfs", k: int = 3, rerank_top_k: int = 3) -> Dict[str, Any]:
+def rag_pipeline_pdf(query: str, api_key: str, pdf_directory: str = "./pdfs", k: int = 3, rerank_top_k: int = 4) -> Dict[str, Any]:
     """
     Complete RAG pipeline with PDF support - now using the RAGPipeline class.
     This function acts as a convenient entry point for PDF-based RAG.
@@ -345,18 +377,18 @@ def rag_pipeline_pdf(query: str, api_key: str, pdf_directory: str = "./pdfs", k:
     pipeline_function_start = time.time()
 
     try:
-        # Initialize the RAGPipeline instance
-        rag_pipeline_instance = RAGPipeline(api_key=api_key)
-        
-        # Initialize documents specifically for PDFs using the RAGPipeline's method
+        rag_pipeline_instance = RAGPipeline(api_key=api_key,
+                                            full_doc_relevance_threshold=1.5, # Default, can be overridden if needed
+                                            summary_relevance_threshold=1.5) # Default, can be overridden if needed
+
+
         rag_pipeline_instance.initialize_documents(pdf_directory=pdf_directory)
 
-        # Run the query through the pipeline (direct_retrieval_only defaults to False for PDFs)
         result = rag_pipeline_instance.query(query=query, k=k, rerank_top_k=rerank_top_k, direct_retrieval_only=False)
-        
+
         total_pipeline_function_time = time.time() - pipeline_function_start
-        # Add a metric for the total time of this wrapper function
-        result["metrics"]["total_pdf_pipeline_function_time"] = total_pipeline_function_time 
+
+        result["metrics"]["total_pdf_pipeline_function_time"] = total_pipeline_function_time
 
         return result
 

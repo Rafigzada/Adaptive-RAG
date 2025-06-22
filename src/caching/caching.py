@@ -1,4 +1,3 @@
-# caching.py
 import os
 import hashlib
 import joblib
@@ -11,24 +10,19 @@ logger = logging.getLogger(__name__)
 
 # --- Caching Utilities ---
 CACHE_DIR = "rag_cache"
-os.makedirs(CACHE_DIR, exist_ok=True) # Ensure the base cache directory exists on import
+os.makedirs(CACHE_DIR, exist_ok=True)
 
-# Define specific subdirectories for different cache types, if desired
-# This adds a layer of organization within rag_cache
-VECTOR_CACHE_DIR = os.path.join(CACHE_DIR, "vectors")
 SUMMARY_CACHE_DIR = os.path.join(CACHE_DIR, "summaries")
-PDF_HASH_CACHE_DIR = os.path.join(CACHE_DIR, "pdf_hashes") # For PDF file hashes
+PDF_HASH_CACHE_DIR = os.path.join(CACHE_DIR, "pdf_hashes")
 
-os.makedirs(VECTOR_CACHE_DIR, exist_ok=True)
 os.makedirs(SUMMARY_CACHE_DIR, exist_ok=True)
 os.makedirs(PDF_HASH_CACHE_DIR, exist_ok=True)
 
 
-# --- Hashing Functions (Kept Separate) ---
-
 def get_doc_content_hash(doc_text: str) -> str:
     """Generates an MD5 hash of the document content."""
     return hashlib.md5(doc_text.encode('utf-8')).hexdigest()
+
 
 def get_document_summary_hash(doc_text: str, metadata: Dict) -> str:
     """
@@ -39,6 +33,7 @@ def get_document_summary_hash(doc_text: str, metadata: Dict) -> str:
     relevant_metadata_str = f"{metadata.get('source', '')}-{metadata.get('title', '')}"
     combined_content = doc_text[:8000] + relevant_metadata_str # Hash only the part sent to LLM for summary
     return hashlib.md5(combined_content.encode('utf-8')).hexdigest()
+
 
 def get_file_hash(filepath: str) -> str:
     """Generates an MD5 hash for a file's binary content."""
@@ -55,6 +50,7 @@ def get_file_hash(filepath: str) -> str:
         return "" # Return empty hash on error
     return hasher.hexdigest()
 
+
 def get_doc_identifier(documents: List[str], metadata: List[Dict]) -> str:
     """
     Generates a unique identifier for the document set based on content hashes and titles/sources.
@@ -67,13 +63,12 @@ def get_doc_identifier(documents: List[str], metadata: List[Dict]) -> str:
         doc_info_list.append(f"{identifier_part}-{doc_content_hash}")
     return hashlib.md5("_".join(sorted(doc_info_list)).encode('utf-8')).hexdigest()
 
+
 def get_vectorizer_params_hash(vectorizer_config: Dict[str, Any]) -> str:
     """Generates a hash of the TF-IDF vectorizer parameters."""
     config_str = str(sorted(vectorizer_config.items()))
     return hashlib.md5(config_str.encode('utf-8')).hexdigest()
 
-
-# --- Common Cache Load/Save Functions ---
 
 def _get_cache_path(cache_name: str, sub_dir: str = None) -> str:
     """Helper to get the base path for a cache file."""
@@ -217,6 +212,5 @@ def clear_rag_cache():
         logger.info("No cache directory found to clear.")
     # Recreate all necessary directories
     os.makedirs(CACHE_DIR, exist_ok=True)
-    os.makedirs(VECTOR_CACHE_DIR, exist_ok=True)
     os.makedirs(SUMMARY_CACHE_DIR, exist_ok=True)
     os.makedirs(PDF_HASH_CACHE_DIR, exist_ok=True)
