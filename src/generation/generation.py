@@ -24,7 +24,7 @@ class AnswerGenerator:
         # multiplier=1: base delay is 1 * (2^attempt_number - 1)
         # min=1: minimum wait time is 1 second
         # max=10: maximum wait time for a single retry is 10 seconds
-        wait=tenacity.wait_exponential(multiplier=1, min=1, max=10),
+        wait=tenacity.wait_exponential(multiplier=60, min=1, max=300),
         
         # Stop strategy: stop after 5 attempts in total (1 original + 4 retries).
         stop=tenacity.stop_after_attempt(5),

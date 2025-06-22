@@ -17,7 +17,7 @@ load_dotenv()
 
 # Import all required modules
 from rag_pipeline import RAGPipeline, rag_pipeline_pdf
-from load_docs import pdf_directory, list_pdf_files
+from src.loading_documents.load_docs import pdf_directory, list_pdf_files
 
 def main():
     """Main function to run the RAG demo"""
@@ -35,9 +35,9 @@ def main():
     pdf_directory(PDF_DIR)
     pdf_files = list_pdf_files(PDF_DIR)
     
-    if not pdf_files:
-        print("No PDF files found. Please add some PDFs to the pdfs directory.")
-        return
+    #if not pdf_files:
+    #    print("No PDF files found. Please add some PDFs to the pdfs directory.")
+    #    return
 
     
     # Sample questions to demonstrate
@@ -54,12 +54,12 @@ def main():
     try:
         # Initialize pipeline
         rag = RAGPipeline(api_key=OPENAI_API_KEY)
-        rag.initialize_documents()
+        rag.initialize_documents(PDF_DIR)
         
         # Run queries
         class_results = []
         for query in test_queries:
-            result = rag.query(query, k=3)
+            result = rag.query(query, k=4)
             class_results.append(result)
             print("\n" + "="*70 + "\n")
         
