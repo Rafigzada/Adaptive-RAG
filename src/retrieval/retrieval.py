@@ -153,7 +153,7 @@ class DocumentRetriever:
         Creates variations of the original query by combining with common search patterns
         """
         # Base query patterns for crossover
-        patterns = [
+        patterns =[
             "information about",
             "details on", 
             "research on",
