@@ -12,6 +12,8 @@ class DocumentRetriever:
     """
     Manages document chunking, embedding using a Sentence Transformer model,
     and retrieval using ChromaDB.
+    
+    ENHANCEMENT: Added simple query expansion with crossover-like functionality
     """
     def __init__(self, embedding_model_name: str = "all-MiniLM-L6-v2"):
         """
@@ -89,7 +91,6 @@ class DocumentRetriever:
             else:
                 print(f"Collection '{self.full_doc_collection.name}' already contains {self.full_doc_collection.count()} documents. Skipping re-embedding.")
 
-
     def create_summary_embeddings(self, summaries: List[Dict], cache_identifier: str):
         """
         Creates a ChromaDB collection and adds document summaries to it.
@@ -146,22 +147,63 @@ class DocumentRetriever:
             else:
                 print(f"Collection '{self.summary_collection.name}' already contains {self.summary_collection.count()} documents. Skipping re-embedding.")
 
-
-    def retrieve_relevant_docs(self, query: str, k: int = 5, collection_type: str = "chunk", where_clause: Optional[Dict] = None) -> Tuple[List[Dict], List[float]]:
+    def expand_query_with_crossover(self, query: str) -> List[str]:
         """
-        Retrieves the most relevant documents/chunks/summaries from ChromaDB based on the query.
+        SIMPLE IMPROVEMENT: Expand query using crossover-like technique
+        Creates variations of the original query by combining with common search patterns
+        """
+        # Base query patterns for crossover
+        patterns = [
+            "information about",
+            "details on", 
+            "research on",
+            "data regarding"
+        ]
+        
+        # Simple synonyms for expansion
+        synonyms = {
+            "find": ["search", "locate"],
+            "document": ["paper", "file"], 
+            "information": ["data", "details"],
+            "about": ["on", "regarding"]
+        }
+        
+        expanded_queries = [query]  # Start with original
+        
+        # Pattern crossover: combine query with patterns
+        query_words = query.lower().split()
+        for pattern in patterns[:2]:  # Limit to 2 patterns
+            if len(query_words) > 1:
+                # Remove first word if it's a search verb, then add pattern
+                if query_words[0] in ["find", "search", "get", "locate"]:
+                    new_query = f"{pattern} {' '.join(query_words[1:])}"
+                else:
+                    new_query = f"{pattern} {query}"
+                expanded_queries.append(new_query)
+        
+        # Synonym crossover: replace one word with synonym
+        for word in query_words[:2]:  # Limit to first 2 words
+            if word in synonyms:
+                synonym = synonyms[word][0]  # Take first synonym
+                new_query = query.replace(word, synonym, 1)
+                expanded_queries.append(new_query)
+        
+        return expanded_queries[:4]  # Return max 4 queries (original + 3 variants)
+
+    def retrieve_relevant_docs(self, query: str, k: int = 5, collection_type: str = "chunk", 
+                             where_clause: Optional[Dict] = None, use_expansion: bool = True) -> Tuple[List[Dict], List[float]]:
+        """
+        ENHANCED: Retrieves the most relevant documents with optional query expansion
+        
         Args:
             query (str): The user's query.
             k (int): The number of top relevant results to retrieve.
             collection_type (str): Specifies which collection to query ('chunk', 'full_doc', 'summary').
             where_clause (Optional[Dict]): A dictionary representing a WHERE clause for metadata filtering.
-                                           E.g., {"original_doc_idx": {"$in": [1, 5, 10]}}
+            use_expansion (bool): Whether to use query expansion with crossover technique.
 
         Returns:
-            Tuple[List[Dict], List[float]]: A tuple containing:
-                - List of dictionaries, where each dictionary represents a retrieved item
-                  and includes 'content' and 'metadata'.
-                - List of similarity scores (distances) for the retrieved items.
+            Tuple[List[Dict], List[float]]: Retrieved items and their similarity scores.
         """
         collection = None
         if collection_type == "chunk":
@@ -175,50 +217,72 @@ class DocumentRetriever:
             return [], []
 
         if collection is None:
-            print(f"ChromaDB '{collection_type}' collection is not directly set. Attempting to get from client...")
-
             print(f"ChromaDB '{collection_type}' collection is not initialized. Cannot perform retrieval.")
             return [], []
 
+        # IMPROVEMENT: Use query expansion if enabled
+        if use_expansion:
+            queries = self.expand_query_with_crossover(query)
+            print(f"Expanding query '{query}' to {len(queries)} variants")
+        else:
+            queries = [query]
 
-        print(f"\n--- Retrieving relevant {collection_type}s from ChromaDB (k={k}) ---")
-        if where_clause:
-            print(f"  Applying WHERE clause: {where_clause}")
-        try:
-            results = collection.query(
-                query_texts=[query],
-                n_results=k,
-                where=where_clause,
-                include=['documents', 'metadatas', 'distances']
-            )
+        all_retrieved_items = []
+        all_scores = []
 
-            retrieved_items = []
-            retrieved_scores = []
+        # Retrieve for each query variant
+        for q in queries:
+            print(f"\n--- Retrieving relevant {collection_type}s for: '{q}' (k={k//len(queries) + 1}) ---")
+            if where_clause:
+                print(f"  Applying WHERE clause: {where_clause}")
+            try:
+                results = collection.query(
+                    query_texts=[q],
+                    n_results=max(1, k//len(queries) + 1),  # Distribute k across queries
+                    where=where_clause,
+                    include=['documents', 'metadatas', 'distances']
+                )
 
-            if results and results['documents']:
-                for i in range(len(results['documents'][0])):
-                    item_content = results['documents'][0][i]
-                    item_meta = results['metadatas'][0][i]
-                    item_score = results['distances'][0][i]
+                if results and results['documents']:
+                    for i in range(len(results['documents'][0])):
+                        item_content = results['documents'][0][i]
+                        item_meta = results['metadatas'][0][i]
+                        item_score = results['distances'][0][i]
 
-                    retrieved_items.append({
-                        "content": item_content,
-                        "metadata": item_meta,
-                        "score": item_score
-                    })
-                    retrieved_scores.append(item_score)
+                        all_retrieved_items.append({
+                            "content": item_content,
+                            "metadata": item_meta,
+                            "score": item_score
+                        })
+                        all_scores.append(item_score)
 
-                    # Print preview for clarity
-                    item_title = item_meta.get("title", f"{collection_type.capitalize()} {item_meta.get('original_doc_idx', 'N/A')}")
-                    item_source = item_meta.get("source", "N/A")
-                    print(f"  {collection_type.capitalize()} {i+1}: '{item_content[:5]}...' \n    (Doc: '{item_title}', \n    Source: {os.path.basename(item_source)}) - \n    Score (Distance): {item_score:.4f}")
-            else:
-                print(f"  No relevant {collection_type}s found in ChromaDB with the given criteria.")
+            except Exception as e:
+                print(f"Error during ChromaDB retrieval for '{collection_type}' with query '{q}': {e}")
 
-            return retrieved_items, retrieved_scores
-        except Exception as e:
-            print(f"Error during ChromaDB retrieval for '{collection_type}': {e}")
-            return [], []
+        # Remove duplicates and sort by score
+        seen_content = set()
+        unique_items = []
+        unique_scores = []
+        
+        for item, score in zip(all_retrieved_items, all_scores):
+            content_key = item["content"][:100]  # Use first 100 chars as key
+            if content_key not in seen_content:
+                seen_content.add(content_key)
+                unique_items.append(item)
+                unique_scores.append(score)
+
+        # Sort by score and limit to k
+        sorted_pairs = sorted(zip(unique_items, unique_scores), key=lambda x: x[1])
+        final_items = [item for item, _ in sorted_pairs[:k]]
+        final_scores = [score for _, score in sorted_pairs[:k]]
+
+        # Print results
+        for i, item in enumerate(final_items):
+            item_title = item['metadata'].get("title", f"{collection_type.capitalize()} {item['metadata'].get('original_doc_idx', 'N/A')}")
+            item_source = item['metadata'].get("source", "N/A")
+            print(f"  {collection_type.capitalize()} {i+1}: '{item['content'][:50]}...' \n    (Doc: '{item_title}', \n    Source: {os.path.basename(item_source)}) - \n    Score (Distance): {final_scores[i]:.4f}")
+
+        return final_items, final_scores
 
     def process_retrieved_chunks(self, retrieved_chunks: List[Dict], max_chunks_per_doc: int = 3) -> List[Dict]:
         """
